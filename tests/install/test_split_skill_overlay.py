@@ -26,22 +26,22 @@ DOCS = (
 
 
 class SplitSkillOverlayTest(unittest.TestCase):
-    def run_test_home_setup(self, homedir="", inherited_home=""):
+    def run_home_resolver(self, host="codex", homedir="", inherited_home=""):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             fake_home = root / "user-home"
-            workspace = root / "test-project"
             fake_home.mkdir()
-            workspace.mkdir()
             env = dict(
                 os.environ,
                 HOME=str(fake_home),
                 EIGENFLUX_HOME=inherited_home,
                 EIGENFLUX_INSTALLER_TEST_MODE="1",
+                RESOLVER_HOST=host,
             )
             command = (
-                '. "$1"; prepare_split_test_home; '
-                'printf "resolved=%s\\nflag=%s\\n" "$EIGENFLUX_HOME" "$HOMEDIR_FLAG"'
+                '. "$1"; '
+                'resolve_eigenflux_home "$HOMEDIR_FLAG" "$EXPLICIT_EIGENFLUX_HOME" '
+                '"$RESOLVER_HOST"'
             )
             args = [
                 "sh",
@@ -53,17 +53,10 @@ class SplitSkillOverlayTest(unittest.TestCase):
             if homedir:
                 args.extend(("--homedir", homedir))
             result = subprocess.run(
-                args, env=env, cwd=workspace, capture_output=True, text=True
+                args, env=env, cwd=root, capture_output=True, text=True
             )
             self.assertEqual(result.returncode, 0, result.stderr)
-
-            pointer = workspace / ".eigenflux-tests/current-home"
-            self.assertTrue(pointer.is_file())
-            resolved = pointer.read_text().strip()
-            self.assertIn(f"resolved={resolved}", result.stdout)
-            self.assertIn(f"flag={resolved}", result.stdout)
-            self.assertTrue(Path(resolved).is_dir())
-            return workspace, resolved
+            return fake_home, result.stdout
 
     def run_overlay(self, failed_doc=""):
         with tempfile.TemporaryDirectory() as directory:
@@ -138,22 +131,20 @@ printf 'branch:%s' "$2" > "$4"
     def test_failed_download_leaves_released_documents_unchanged(self):
         self.run_overlay("ef-onboarding/references/prefill.md")
 
-    def test_creates_fresh_test_home_instead_of_reusing_inherited_home(self):
-        inherited = "/existing/production/.eigenflux"
-        workspace, resolved = self.run_test_home_setup(inherited_home=inherited)
-        self.assertNotEqual(resolved, inherited)
-        self.assertTrue(
-            str(Path(resolved).resolve()).startswith(
-                str((workspace / ".eigenflux-tests/split-onboarding-").resolve())
-            )
-        )
-        self.assertTrue(resolved.endswith("/.eigenflux"))
+    def test_codex_uses_formal_stable_home(self):
+        fake_home, resolved = self.run_home_resolver()
+        self.assertEqual(resolved, str(fake_home / ".eigenflux-codex/.eigenflux"))
 
-    def test_explicit_homedir_is_recorded_and_reused(self):
+    def test_explicit_homedir_still_wins(self):
         with tempfile.TemporaryDirectory() as directory:
             selected = str(Path(directory) / "chosen/.eigenflux")
-            _, resolved = self.run_test_home_setup(homedir=selected)
+            _, resolved = self.run_home_resolver(homedir=selected)
             self.assertEqual(resolved, selected)
+
+    def test_inherited_home_still_wins(self):
+        inherited = "/existing/production/.eigenflux"
+        _, resolved = self.run_home_resolver(inherited_home=inherited)
+        self.assertEqual(resolved, inherited)
 
 
 if __name__ == "__main__":

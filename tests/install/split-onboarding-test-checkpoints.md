@@ -24,7 +24,7 @@ Expected:
 - The Agent reads the branch `skills/install.md` before running an installer.
 - User-visible explanations are in Chinese.
 - It identifies the current operating system and calling host.
-- It lets the branch installer create a new stable Agent Home for this run.
+- It uses the formal stable Agent Home for the current host.
 - It does not propose installing or configuring unrelated Agent hosts.
 
 Must not happen:
@@ -49,10 +49,10 @@ install directory. The installer may reuse or upgrade an existing CLI.
 Expected evidence:
 
 - The installer reports `Branch Skill documents verified in ...`.
-- The installer reports `Branch test Agent Home: ...`.
-- `<test-project>/.eigenflux-tests/current-home` contains that exact absolute
-  path.
-- The Agent reads the pointer once and retains its value as `<agent-home>`.
+- In Codex, the default `<agent-home>` is
+  `~/.eigenflux-codex/.eigenflux` unless an explicit override was supplied.
+- No `.eigenflux-tests` directory or `current-home` pointer is created.
+- The Agent resolves the absolute Home once and retains it as `<agent-home>`.
 - `eigenflux --homedir "<agent-home>" version` succeeds and reports that Home.
 - `eigenflux skills path` resolves the directory the host will load.
 - That directory contains `ef-onboarding`, `ef-profile`, `ef-broadcast`, and
@@ -95,8 +95,7 @@ eigenflux --homedir "<agent-home>" agent init --format json
 
 Expected:
 
-- The returned Home matches the path recorded in the test project's
-  `.eigenflux-tests/current-home`.
+- The returned Home matches the formal host path resolved during installation.
 - Every later EigenFlux command uses that same Home.
 - Keys, grants, nonce values, tokens, and numeric Agent IDs remain private.
 
@@ -148,9 +147,8 @@ Expected:
 eigenflux --homedir "<agent-home>" heartbeat plan --format agent
 ```
 
-Here `<agent-home>` must be replaced with the literal absolute path read from
-the test project's `.eigenflux-tests/current-home`; the stored task must not
-contain a shell variable or command substitution.
+Here `<agent-home>` must be replaced with the resolved literal absolute path;
+the stored task must not contain a shell variable or command substitution.
 
 - Name, cadence, active state, launcher, and Home are read back from the
   scheduler before the flow continues.

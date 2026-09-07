@@ -27,3 +27,19 @@ func TestHomeActivityWindowStartUsesRollingDay(t *testing.T) {
 		t.Fatalf("window start = %d, want %d", got, want)
 	}
 }
+
+func TestMaskHomeActivityEnglishName(t *testing.T) {
+	for _, tc := range []struct{ name, englishName, want string }{
+		{"刘明", "Liu Ming", "L***"},
+		{"小刘", "James", "J***"},
+		{"刘明", "", "***"},
+		{"James", "", "J***"},
+		{"", "", "***"},
+		{"刘明", " 刘明 ", "***"},
+		{"刘明", " Émile ", "É***"},
+	} {
+		if got := maskHomeActivityEnglishName(tc.name, tc.englishName); got != tc.want {
+			t.Fatalf("English mask = %q, want %q", got, tc.want)
+		}
+	}
+}

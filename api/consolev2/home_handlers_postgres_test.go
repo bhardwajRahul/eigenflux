@@ -357,6 +357,8 @@ func testConsoleCountrySources(t *testing.T, db *gorm.DB, svc *Service, h *serve
 			t.Fatal(err)
 		}
 	}
+	exec(`UPDATE agents SET agent_name_en='James Research' WHERE agent_id=?`, actorID)
+	exec(`UPDATE agents SET agent_name_en='Liu Assistant' WHERE agent_id=?`, peerID)
 	// The canonical card deliberately disagrees with both legacy profile fields.
 	exec(`INSERT INTO agent_profiles (agent_id, country, profile_data, updated_at)
   VALUES (?, '', '{"geo":"US"}', ?), (?, 'US', '{"geo":"US"}', ?)`, actorID, now, missingCardID, now)
@@ -386,6 +388,16 @@ func testConsoleCountrySources(t *testing.T, db *gorm.DB, svc *Service, h *serve
 			continue
 		}
 		seen[event.Type] = true
+		if event.Private {
+			if event.ActorNameEn != "J***" || event.ActorShortID != "" {
+				t.Fatalf("private identity is not masked: %#v", event)
+			}
+			if (event.Type == "message" || event.Type == "relation") && event.CounterpartNameEn != "L***" {
+				t.Fatalf("private counterpart English mask = %q", event.CounterpartNameEn)
+			}
+		} else if event.ActorNameEn != "James Research" {
+			t.Fatalf("public English name = %q", event.ActorNameEn)
+		}
 		if event.ActorCountryCode != "CN" {
 			t.Fatalf("%s actor country=%q", event.Type, event.ActorCountryCode)
 		}

@@ -1139,6 +1139,67 @@ report_attribution() {
   fi
 }
 
+# Branch-test overlay: host setup may synchronize the currently released Skill
+# bundle, so restore this branch's split documents only after setup completes.
+install_split_skill_test_docs() {
+  TEST_BRANCH="codex/split-install-onboarding-skills"
+  TEST_DOC_BASE="https://raw.githubusercontent.com/phronesis-io/eigenflux/${TEST_BRANCH}/skills"
+  EF_BIN="${EIGENFLUX_INSTALL_DIR:-$HOME/.local/bin}/eigenflux"
+  [ -x "$EF_BIN" ] || EF_BIN="$(command -v eigenflux 2>/dev/null || true)"
+  [ -n "$EF_BIN" ] || { err "Cannot locate eigenflux for branch Skill installation"; return 1; }
+
+  case "$INVOKING_HOST" in
+    openclaw|claude-code|codex)
+      TEST_SKILLS_DIR=$("$EF_BIN" skills path --host "$INVOKING_HOST") ;;
+    *) TEST_SKILLS_DIR=$("$EF_BIN" skills path) ;;
+  esac
+  [ -n "$TEST_SKILLS_DIR" ] || { err "Cannot resolve branch-test Skill directory"; return 1; }
+
+  TEST_DOC_TMP=$(mktemp -d)
+  for TEST_DOC in \
+    ef-onboarding/SKILL.md \
+    ef-onboarding/references/consent.md \
+    ef-onboarding/references/prefill.md \
+    ef-onboarding/references/recurring-trigger.md \
+    ef-onboarding/references/console-handoff.md \
+    ef-profile/SKILL.md \
+    ef-profile/references/config.md \
+    ef-broadcast/SKILL.md \
+    ef-communication/SKILL.md
+  do
+    mkdir -p "$TEST_DOC_TMP/$(dirname "$TEST_DOC")"
+    if ! curl -fsSL "$TEST_DOC_BASE/$TEST_DOC" -o "$TEST_DOC_TMP/$TEST_DOC" ||
+       [ ! -s "$TEST_DOC_TMP/$TEST_DOC" ]; then
+      rm -rf "$TEST_DOC_TMP"
+      err "Branch Skill documents unavailable; stop onboarding instead of using released documents"
+      return 1
+    fi
+  done
+
+  for TEST_DOC in \
+    ef-onboarding/SKILL.md \
+    ef-onboarding/references/consent.md \
+    ef-onboarding/references/prefill.md \
+    ef-onboarding/references/recurring-trigger.md \
+    ef-onboarding/references/console-handoff.md \
+    ef-profile/SKILL.md \
+    ef-profile/references/config.md \
+    ef-broadcast/SKILL.md \
+    ef-communication/SKILL.md
+  do
+    mkdir -p "$TEST_SKILLS_DIR/$(dirname "$TEST_DOC")"
+    cp "$TEST_DOC_TMP/$TEST_DOC" "$TEST_SKILLS_DIR/$TEST_DOC"
+    if ! cmp -s "$TEST_DOC_TMP/$TEST_DOC" "$TEST_SKILLS_DIR/$TEST_DOC"; then
+      rm -rf "$TEST_DOC_TMP"
+      err "Branch Skill document verification failed; stop onboarding"
+      return 1
+    fi
+  done
+  rm -f "$TEST_SKILLS_DIR/ef-profile/references/onboarding-v2.md"
+  rm -rf "$TEST_DOC_TMP"
+  ok "Branch Skill documents verified in $TEST_SKILLS_DIR"
+}
+
 # ── Main ──────────────────────────────────────────────────────
 
 # Tests source this file to exercise the resolver without downloading binaries
@@ -1154,6 +1215,7 @@ migrate_config
 provision_agent_v2
 setup_agents
 setup_codex
+install_split_skill_test_docs
 
 # Name the hosts we found but left alone, so "it didn't set up my Codex" is an
 # informed outcome rather than a silent one.

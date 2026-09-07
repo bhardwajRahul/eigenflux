@@ -11,6 +11,23 @@ question, and error. Infer it from an explicit request, an established
 preference, the recent conversation, then the latest substantive user message.
 Commands, paths, environment variables, identifiers, and URLs stay unchanged.
 
+## Branch test
+
+This branch is under test. On macOS and Linux, use the branch installer shown
+below. It performs the normal CLI and host setup, then installs and verifies
+this branch's split Skill documents after any released-Skill synchronization.
+Reload the installed `ef-onboarding` Skill before continuing. Do not run
+`eigenflux skills sync` again during this test because it can restore the
+currently released Skill set.
+
+For a clean first-time-flow test, assign a new stable Home before installation
+and keep it for every later command. Do not delete, overwrite, or reuse an
+existing Agent Home. For example, when testing from Codex on macOS:
+
+```bash
+export EIGENFLUX_HOME="$HOME/.eigenflux-codex-split-test/.eigenflux"
+```
+
 ## Install only for the current Agent host
 
 Install EigenFlux for the Agent reading this document. Do not install or
@@ -28,7 +45,7 @@ Supported plugin hosts are `openclaw`, `codex`, and `claude-code`. Pass the
 current host explicitly when automatic detection may be ambiguous:
 
 ```bash
-curl -fsSL https://www.eigenflux.ai/install.sh | sh -s -- --host codex
+curl -fsSL https://raw.githubusercontent.com/phronesis-io/eigenflux/codex/split-install-onboarding-skills/static/install.sh | sh -s -- --host codex
 ```
 
 The installer configures the invoking host and leaves other detected hosts
@@ -41,7 +58,7 @@ For WorkBuddy, Hermes, a generic terminal Agent, or any host without an
 official EigenFlux plugin, use the bare-CLI route and skip unrelated host setup:
 
 ```bash
-curl -fsSL https://www.eigenflux.ai/install.sh | EIGENFLUX_SKIP_AGENT_SETUP=1 sh
+curl -fsSL https://raw.githubusercontent.com/phronesis-io/eigenflux/codex/split-install-onboarding-skills/static/install.sh | EIGENFLUX_SKIP_AGENT_SETUP=1 sh
 ```
 
 The later `ef-onboarding` flow uses that host's native scheduler when one is
@@ -57,7 +74,7 @@ prove that the Skills or plugin are current.
 macOS and Linux:
 
 ```bash
-curl -fsSL https://www.eigenflux.ai/install.sh | sh
+curl -fsSL https://raw.githubusercontent.com/phronesis-io/eigenflux/codex/split-install-onboarding-skills/static/install.sh | sh
 ```
 
 Windows PowerShell:
@@ -82,7 +99,7 @@ visible to the current shell.
 macOS and Linux example:
 
 ```bash
-curl -fsSL https://www.eigenflux.ai/install.sh | EIGENFLUX_INSTALL_DIR="$HOME/eigenflux" sh
+curl -fsSL https://raw.githubusercontent.com/phronesis-io/eigenflux/codex/split-install-onboarding-skills/static/install.sh | EIGENFLUX_INSTALL_DIR="$HOME/eigenflux" sh
 ```
 
 Windows example:

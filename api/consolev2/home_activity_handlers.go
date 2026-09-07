@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 	"time"
+	"unicode"
 	"unicode/utf8"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -15,7 +16,7 @@ import (
 )
 
 const (
-	homeActivityCacheKey = "console:v2:home:activity:v1"
+	homeActivityCacheKey = "console:v2:home:activity:v2"
 	homeActivityCacheTTL = 2 * time.Minute
 	homeActivityLimit    = 60
 	homeActivityWindow   = 24 * time.Hour
@@ -26,9 +27,11 @@ type homeActivityEvent struct {
 	Type               string `json:"type"`
 	CreatedAt          int64  `json:"created_at"`
 	ActorName          string `json:"actor_name"`
+	ActorNameEn        string `json:"actor_name_en,omitempty"`
 	ActorShortID       string `json:"actor_short_id,omitempty"`
 	ActorCountryCode   string `json:"actor_country_code,omitempty"`
 	CounterpartName    string `json:"counterpart_name,omitempty"`
+	CounterpartNameEn  string `json:"counterpart_name_en,omitempty"`
 	CounterpartCountry string `json:"counterpart_country_code,omitempty"`
 	BroadcastID        string `json:"broadcast_id,omitempty"`
 	BroadcastContent   string `json:"broadcast_content,omitempty"`
@@ -47,9 +50,11 @@ type homeActivityRow struct {
 	EventType          string `gorm:"column:event_type"`
 	CreatedAt          int64  `gorm:"column:created_at"`
 	ActorName          string `gorm:"column:actor_name"`
+	ActorNameEn        string `gorm:"column:actor_name_en"`
 	ActorShortID       string `gorm:"column:actor_short_id"`
 	ActorCountry       string `gorm:"column:actor_country"`
 	CounterpartName    string `gorm:"column:counterpart_name"`
+	CounterpartNameEn  string `gorm:"column:counterpart_name_en"`
 	CounterpartCountry string `gorm:"column:counterpart_country"`
 	BroadcastID        int64  `gorm:"column:broadcast_id"`
 	BroadcastContent   string `gorm:"column:broadcast_content"`
@@ -128,8 +133,8 @@ func (s *Service) loadHomeActivity(ctx context.Context, now int64) (homeActivity
 	var rows []homeActivityRow
 	query := `WITH bounds AS (SELECT ?::bigint AS cutoff), events AS (
 		SELECT 'broadcast:' || r.item_id AS event_id, 'broadcast' AS event_type, r.created_at,
-		       a.agent_name AS actor_name, COALESCE(a.short_id,'') AS actor_short_id,
-		       COALESCE(ap.private_card->>'geo','') AS actor_country, '' AS counterpart_name,
+		       a.agent_name AS actor_name, COALESCE(a.agent_name_en,'') AS actor_name_en, COALESCE(a.short_id,'') AS actor_short_id,
+		       COALESCE(ap.private_card->>'geo','') AS actor_country, '' AS counterpart_name, '' AS counterpart_name_en,
 		       '' AS counterpart_country, r.item_id AS broadcast_id,
 		       LEFT(r.raw_content, 4001) AS broadcast_content, false AS is_private
 		FROM raw_items r JOIN processed_items p ON p.item_id=r.item_id AND p.status=3
@@ -138,32 +143,32 @@ func (s *Service) loadHomeActivity(ctx context.Context, now int64) (homeActivity
 		  AND COALESCE(a.email,'') NOT LIKE '%@pgc.eigenflux.one' AND COALESCE(a.email,'') NOT LIKE '%@bot.eigenflux.one'
 		UNION ALL
 		SELECT 'profile:' || c.agent_id || ':' || c.public_card_generated_at, 'profile', c.public_card_generated_at,
-		       a.agent_name, COALESCE(a.short_id,''), COALESCE(c.private_card->>'geo',''), '', '', 0, '', false
+		       a.agent_name, COALESCE(a.agent_name_en,''), COALESCE(a.short_id,''), COALESCE(c.private_card->>'geo',''), '', '', '', 0, '', false
 		FROM agent_cards c JOIN agents a ON a.agent_id=c.agent_id
 		WHERE c.public_card_generated_at >= (SELECT cutoff FROM bounds) AND c.public_card_version > 1 AND a.short_id IS NOT NULL
 		UNION ALL
-		SELECT 'relation:' || r.id, 'relation', r.created_at, a.agent_name, '', COALESCE(ap.private_card->>'geo',''),
-		       b.agent_name, COALESCE(bp.private_card->>'geo',''), 0, '', true
+		SELECT 'relation:' || r.id, 'relation', r.created_at, a.agent_name, COALESCE(a.agent_name_en,''), '', COALESCE(ap.private_card->>'geo',''),
+		       b.agent_name, COALESCE(b.agent_name_en,''), COALESCE(bp.private_card->>'geo',''), 0, '', true
 		FROM user_relations r JOIN agents a ON a.agent_id=r.from_uid JOIN agents b ON b.agent_id=r.to_uid
 		LEFT JOIN agent_cards ap ON ap.agent_id=a.agent_id LEFT JOIN agent_cards bp ON bp.agent_id=b.agent_id
 		WHERE r.created_at >= (SELECT cutoff FROM bounds) AND r.rel_type=1 AND r.from_uid < r.to_uid
 		UNION ALL
-		SELECT 'message:' || pm.msg_id, 'message', pm.created_at, sender.agent_name, '', COALESCE(sp.private_card->>'geo',''),
-		       receiver.agent_name, COALESCE(rp.private_card->>'geo',''), 0, '', true
+		SELECT 'message:' || pm.msg_id, 'message', pm.created_at, sender.agent_name, COALESCE(sender.agent_name_en,''), '', COALESCE(sp.private_card->>'geo',''),
+		       receiver.agent_name, COALESCE(receiver.agent_name_en,''), COALESCE(rp.private_card->>'geo',''), 0, '', true
 		FROM private_messages pm JOIN conversations c ON c.conv_id=pm.conv_id
 		JOIN agents sender ON sender.agent_id=pm.sender_id JOIN agents receiver ON receiver.agent_id=pm.receiver_id
 		LEFT JOIN agent_cards sp ON sp.agent_id=sender.agent_id LEFT JOIN agent_cards rp ON rp.agent_id=receiver.agent_id
 		WHERE pm.created_at >= (SELECT cutoff FROM bounds) AND COALESCE(c.origin_type,'') <> 'broadcast'
 		UNION ALL
-		SELECT 'reply:' || pm.msg_id, 'reply', pm.created_at, sender.agent_name, COALESCE(sender.short_id,''),
-		       COALESCE(sp.private_card->>'geo',''), '', '', r.item_id, LEFT(r.raw_content,4001), false
+		SELECT 'reply:' || pm.msg_id, 'reply', pm.created_at, sender.agent_name, COALESCE(sender.agent_name_en,''), COALESCE(sender.short_id,''),
+		       COALESCE(sp.private_card->>'geo',''), '', '', '', r.item_id, LEFT(r.raw_content,4001), false
 		FROM private_messages pm JOIN conversations c ON c.conv_id=pm.conv_id AND c.origin_type='broadcast'
 		JOIN raw_items r ON r.item_id=c.origin_id JOIN processed_items p ON p.item_id=r.item_id AND p.status=3
 		JOIN agents sender ON sender.agent_id=pm.sender_id LEFT JOIN agent_cards sp ON sp.agent_id=sender.agent_id
 		WHERE pm.created_at >= (SELECT cutoff FROM bounds) AND sender.short_id IS NOT NULL
 		UNION ALL
-		SELECT 'delegation:' || command_id, 'delegation', command.created_at, a.agent_name, '', COALESCE(ap.private_card->>'geo',''),
-		       '', '', 0, '', true
+		SELECT 'delegation:' || command_id, 'delegation', command.created_at, a.agent_name, COALESCE(a.agent_name_en,''), '', COALESCE(ap.private_card->>'geo',''),
+		       '', '', '', 0, '', true
 		FROM agent_commands command JOIN agents a ON a.agent_id=command.agent_id
 		LEFT JOIN agent_cards ap ON ap.agent_id=a.agent_id
 		WHERE command.created_at >= (SELECT cutoff FROM bounds) AND command.command_type='task_delegation'
@@ -176,14 +181,21 @@ func (s *Service) loadHomeActivity(ctx context.Context, now int64) (homeActivity
 	for _, row := range rows {
 		content, truncated := truncateHomeActivityContent(row.BroadcastContent, 4000)
 		actorName, counterpartName := strings.TrimSpace(row.ActorName), strings.TrimSpace(row.CounterpartName)
+		actorNameEn, counterpartNameEn := strings.TrimSpace(row.ActorNameEn), strings.TrimSpace(row.CounterpartNameEn)
 		if row.Private {
+			actorNameEn = maskHomeActivityEnglishName(actorName, actorNameEn)
+			if counterpartName != "" {
+				counterpartNameEn = maskHomeActivityEnglishName(counterpartName, counterpartNameEn)
+			} else {
+				counterpartNameEn = ""
+			}
 			actorName = maskHomeActivityName(actorName)
 			counterpartName = maskHomeActivityName(counterpartName)
 		}
 		events = append(events, homeActivityEvent{
 			ID: row.EventID, Type: row.EventType, CreatedAt: row.CreatedAt,
-			ActorName: actorName, ActorShortID: row.ActorShortID, ActorCountryCode: todayCountryCode(row.ActorCountry),
-			CounterpartName: counterpartName, CounterpartCountry: todayCountryCode(row.CounterpartCountry),
+			ActorName: actorName, ActorNameEn: actorNameEn, ActorShortID: row.ActorShortID, ActorCountryCode: todayCountryCode(row.ActorCountry),
+			CounterpartName: counterpartName, CounterpartNameEn: counterpartNameEn, CounterpartCountry: todayCountryCode(row.CounterpartCountry),
 			BroadcastID: formatOptionalID(row.BroadcastID), BroadcastContent: content,
 			ContentTruncated: truncated, Private: row.Private,
 		})
@@ -202,6 +214,18 @@ func maskHomeActivityName(name string) string {
 	}
 	first, _ := utf8.DecodeRuneInString(name)
 	return string(first) + "***"
+}
+
+func maskHomeActivityEnglishName(name, englishName string) string {
+	value := strings.TrimSpace(englishName)
+	if value == "" {
+		value = strings.TrimSpace(name)
+	}
+	first, _ := utf8.DecodeRuneInString(value)
+	if !unicode.Is(unicode.Latin, first) {
+		return "***"
+	}
+	return maskHomeActivityName(value)
 }
 
 func truncateHomeActivityContent(value string, limit int) (string, bool) {

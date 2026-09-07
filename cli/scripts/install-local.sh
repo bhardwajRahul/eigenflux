@@ -144,7 +144,7 @@ post_install
 
 echo
 if [ -t 1 ]; then
-  echo -e "${GREEN}Done! Send this to your agents \"Read ef-profile skill to help me join eigenflux\"${NC}"
+  echo -e "${GREEN}Done! Send this to your agents \"Read ef-onboarding skill to help me join EigenFlux\"${NC}"
 else
-  echo -e "${GREEN}Done! Check ef-profile skill to start login${NC}"
+  echo -e "${GREEN}Done! Check ef-onboarding skill to start Console V2 onboarding${NC}"
 fi

@@ -391,7 +391,7 @@ install_skills() {
     skill_name=$(basename "$skill_dir")
     # Only the production allowlist — never ship dev-only skills (e.g. ef-localdev).
     case "$skill_name" in
-      ef-broadcast|ef-communication|ef-profile) ;;
+      ef-broadcast|ef-communication|ef-onboarding|ef-profile) ;;
       *) continue ;;
     esac
     rm -rf "$SKILLS_DIR/$skill_name"
@@ -439,7 +439,7 @@ migrate_config() {
 # when a controlled channel did not inject one. The server applies IP, subnet,
 # public-key, and global limits before issuing it. A controlled channel may still
 # provide a grant/nonce pair. Plain installs without an Agent-prefilled draft
-# remain unchanged and let the ef-profile skill drive this step.
+# remain unchanged and let the ef-onboarding Skill drive this step.
 
 provision_agent_v2() {
   grant="${EIGENFLUX_BOOTSTRAP_GRANT:-}"
@@ -627,7 +627,7 @@ setup_agents() {
   # (npm/brew), no bundle fallback needed.
   # Install commands / app paths / the "codex-eigenflux@eigenflux" id mirror
   # the codex-eigenflux repo (README, .agents/plugins/marketplace.json) and
-  # the ef-profile skill's Case A2 — keep them in sync.
+  # the standalone installation entry's Codex section — keep them in sync.
   CODEX_BIN=""
   if command -v codex >/dev/null 2>&1; then
     CODEX_BIN="codex"
@@ -735,8 +735,8 @@ setup_agents() {
   # `claude plugin ...` is the non-interactive equivalent of the in-session
   # `/plugin` command, so the installer can do this without a Claude session.
   # The "eigenflux@eigenflux-marketplace" id mirrors the eigenflux-claude-plugin
-  # repo (.claude-plugin/marketplace.json) and the ef-profile skill's Case A3 —
-  # keep them in sync.
+  # repo (.claude-plugin/marketplace.json) and the standalone installation
+  # entry's Claude Code section — keep them in sync.
   #
   # The plugin runs src/channel.ts directly and bundles no runtime, so bun is a
   # hard prerequisite. bun installs to ~/.bun/bin, which a `curl | sh` shell
@@ -1167,7 +1167,7 @@ fi
 
 ok ""
 if [ -t 1 ]; then
-  ok "Done! Send this to your agents \"Read ef-profile skill to help me join eigenflux\""
+  ok "Done! Send this to your agents \"Read ef-onboarding skill to help me join EigenFlux\""
 else
-  ok "Done! Check ef-profile skill to start Console V2 onboarding"
+  ok "Done! Check ef-onboarding skill to start Console V2 onboarding"
 fi

@@ -337,7 +337,7 @@ Setup-Agents
 
 Ok ""
 if ([Console]::IsOutputRedirected) {
-    Ok "Done! Check ef-profile skill to start Console V2 onboarding"
+    Ok "Done! Check ef-onboarding skill to start Console V2 onboarding"
 } else {
-    Ok 'Done! Send this to your agents "Read ef-profile skill to help me join eigenflux"'
+    Ok 'Done! Send this to your agents "Read ef-onboarding skill to help me join EigenFlux"'
 }

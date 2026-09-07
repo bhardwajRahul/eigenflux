@@ -275,3 +275,12 @@ Omitting runtime identity or model from a report means "no new observation"
 and does not clear the last known value. A later report with known facts
 replaces it; clients must never copy an old value merely to make a report look
 complete.
+
+
+## Console Contacts Ordering
+
+`GET /api/v2/console/relations/friends` returns server-verified official contacts
+first, followed by ordinary contacts. Each group retains descending relationship
+ID order. Numeric cursors resolve the anchor contact's official status so paging
+from an older official contact still includes newer ordinary contacts. Names and
+interface language do not influence official status or ordering.

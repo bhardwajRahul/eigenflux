@@ -81,6 +81,7 @@ func TestHomeHTTPContracts(t *testing.T) {
 	redisClient := redis.NewClient(&redis.Options{Addr: redisServer.Addr()})
 	t.Cleanup(func() { _ = redisClient.Close() })
 	svc, err := NewService(db, &fixedIDGenerator{id: agentIDValue + 100}, &config.Config{
+		EnableCommunicationV2:    true,
 		ConsoleV2BootstrapSecret: "home-contract-secret",
 		ConsoleV2OTPPepper:       "home-contract-pepper",
 		ConsoleV2PublicURL:       "https://console.example.test",
@@ -190,6 +191,9 @@ func TestHomeHTTPContracts(t *testing.T) {
 		_ = db.Exec(`DELETE FROM raw_items WHERE item_id IN (?, ?, ?, ?)`, firstVoiceItemID, oldDemandItemID, newDemandItemID, newPublishItemID).Error
 	})
 
+	t.Run("official contacts remain first across pages", func(t *testing.T) {
+		testOfficialContactsPagination(t, db, svc, h, cookie, agentIDValue, demandAgentID, publishAgentID, now)
+	})
 	t.Run("country sources agree across Console", func(t *testing.T) {
 		testConsoleCountrySources(t, db, svc, h, cookie, agentIDValue, demandAgentID, publishAgentID, firstVoiceItemID, newPublishItemID, now)
 	})
@@ -465,5 +469,62 @@ func testConsoleCountrySources(t *testing.T, db *gorm.DB, svc *Service, h *serve
 	}
 	if blocked[strconv.FormatInt(peerID, 10)].CountryCode != "" {
 		t.Fatalf("blocked peer exposes country: %#v", blocked)
+	}
+}
+
+func testOfficialContactsPagination(t *testing.T, db *gorm.DB, svc *Service, h *server.Hertz, cookie ut.Header, viewerID, officialID, normalID, now int64) {
+	t.Helper()
+	tx := db.Begin()
+	if tx.Error != nil {
+		t.Fatal(tx.Error)
+	}
+	originalDB := svc.db
+	svc.db = tx
+	defer func() { svc.db = originalDB; tx.Rollback() }()
+	if err := tx.Exec(`UPDATE agents SET is_official=true WHERE agent_id=?`, officialID).Error; err != nil {
+		t.Fatal(err)
+	}
+	// The official assistant is the older contact. A descending relation-ID
+	// cursor alone would miss the newer ordinary contact after page one.
+	if err := tx.Exec(`INSERT INTO user_relations (from_uid, to_uid, rel_type, created_at) VALUES (?, ?, 1, ?), (?, ?, 1, ?)`, viewerID, officialID, now-1000, viewerID, normalID, now).Error; err != nil {
+		t.Fatal(err)
+	}
+	// Without official contacts, the existing newest-relation-first order stays.
+	if err := tx.Exec(`UPDATE agents SET is_official=false WHERE agent_id=?`, officialID).Error; err != nil {
+		t.Fatal(err)
+	}
+	status, payload, _ := performJSON(t, h, http.MethodGet, "/api/v2/console/relations/friends?limit=2", nil, cookie)
+	if status != http.StatusOK {
+		t.Fatalf("ordinary friends status=%d payload=%#v", status, payload)
+	}
+	ordinary := payload["data"].(map[string]interface{})["friends"].([]interface{})
+	if len(ordinary) != 2 || ordinary[0].(map[string]interface{})["peer_agent_id"] != strconv.FormatInt(normalID, 10) {
+		t.Fatalf("ordinary contacts reordered: %#v", ordinary)
+	}
+	if err := tx.Exec(`UPDATE agents SET is_official=true WHERE agent_id=?`, officialID).Error; err != nil {
+		t.Fatal(err)
+	}
+	cursor := ""
+	for index, wantID := range []int64{officialID, normalID} {
+		path := "/api/v2/console/relations/friends?limit=1"
+		if cursor != "" {
+			path += "&cursor=" + cursor
+		}
+		status, payload, _ := performJSON(t, h, http.MethodGet, path, nil, cookie)
+		if status != http.StatusOK {
+			t.Fatalf("friends status=%d payload=%#v", status, payload)
+		}
+		data := payload["data"].(map[string]interface{})
+		rows := data["friends"].([]interface{})
+		if len(rows) != 1 || rows[0].(map[string]interface{})["peer_agent_id"] != strconv.FormatInt(wantID, 10) {
+			t.Fatalf("page %d friends=%#v, want %d", index, rows, wantID)
+		}
+		if data["total"] != float64(2) || data["has_more"] != (index == 0) {
+			t.Fatalf("page %d metadata=%#v", index, data)
+		}
+		cursor, _ = data["next_cursor"].(string)
+		if (cursor != "") != (index == 0) {
+			t.Fatalf("page %d cursor=%q", index, cursor)
+		}
 	}
 }

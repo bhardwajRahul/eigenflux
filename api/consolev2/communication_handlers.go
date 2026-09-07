@@ -712,9 +712,14 @@ func (s *Service) listCommunicationFriends(_ context.Context, c *app.RequestCont
 		return
 	}
 	var friends []communicationFriend
-	if err := s.db.Raw(`SELECT id, to_uid, remark, created_at FROM user_relations
-		WHERE from_uid = ? AND rel_type = 1 AND (? = 0 OR id < ?)
-		ORDER BY id DESC LIMIT ?`, viewerID, cursor, cursor, limit+1).Scan(&friends).Error; err != nil {
+	if err := s.db.Raw(`SELECT r.id, r.to_uid, r.remark, r.created_at FROM user_relations r
+		JOIN agents a ON a.agent_id = r.to_uid
+		LEFT JOIN user_relations anchor ON anchor.id = ? AND anchor.from_uid = ?
+		LEFT JOIN agents anchor_agent ON anchor_agent.agent_id = anchor.to_uid
+		WHERE r.from_uid = ? AND r.rel_type = 1
+		  AND (? = 0 OR a.is_official < COALESCE(anchor_agent.is_official, false)
+		    OR (a.is_official = COALESCE(anchor_agent.is_official, false) AND r.id < ?))
+		ORDER BY a.is_official DESC, r.id DESC LIMIT ?`, cursor, viewerID, viewerID, cursor, cursor, limit+1).Scan(&friends).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "FRIENDS_READ_FAILED", "could not read friends", nil)
 		return
 	}

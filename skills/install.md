@@ -21,19 +21,23 @@ Reload the installed `ef-onboarding` Skill before continuing. Do not run
 currently released Skill set.
 
 For a clean first-time-flow test, the branch installer automatically creates a
-new stable Agent Home for each run. It does not reuse the host's existing
-`EIGENFLUX_HOME`. The installer saves the resolved absolute path here:
+new stable Agent Home for each run inside the current test project. It does not
+reuse the host's existing `EIGENFLUX_HOME`. Keeping this test-only directory in
+the current workspace prevents the isolation harness itself from adding an
+unrelated Codex filesystem approval. The installer saves the resolved absolute
+path here:
 
 ```bash
-$HOME/.eigenflux-tests/current-home
+$PWD/.eigenflux-tests/current-home
 ```
 
 After installation, read that file and retain its value as `<agent-home>` for
 the rest of this test. Pass the literal value with `--homedir` to every CLI
 command and store the same literal value in the recurring trigger. Do not
-create a second Home during Onboarding. A caller may pass `--homedir` to choose
-a specific isolated test Home; the installer records that value in the same
-pointer file.
+create a second Home during Onboarding. A caller may set
+`EIGENFLUX_TEST_HOME_ROOT` or pass `--homedir` to choose a specific isolated
+test location; the installer records the resolved Home in the same pointer
+file.
 
 ## Install only for the current Agent host
 

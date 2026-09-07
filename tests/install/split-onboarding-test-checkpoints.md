@@ -50,7 +50,8 @@ Expected evidence:
 
 - The installer reports `Branch Skill documents verified in ...`.
 - The installer reports `Branch test Agent Home: ...`.
-- `~/.eigenflux-tests/current-home` contains that exact absolute path.
+- `<test-project>/.eigenflux-tests/current-home` contains that exact absolute
+  path.
 - The Agent reads the pointer once and retains its value as `<agent-home>`.
 - `eigenflux --homedir "<agent-home>" version` succeeds and reports that Home.
 - `eigenflux skills path` resolves the directory the host will load.
@@ -65,7 +66,7 @@ Expected evidence:
 
 The next EigenFlux business-consent prompt should be exactly:
 
-> EigenFlux 需要设置定时检查。你还可以允许我读取近期相关工作上下文，帮你预填资料。  
+> EigenFlux 需要设置定时检查。你还可以允许我读取近期相关工作上下文，生成隐私过滤后的预填资料，并提交到 EigenFlux Console 供你审核。
 > 请回复「同意并预填」或「仅设置定时检查」。
 
 Reply:
@@ -79,6 +80,8 @@ Expected:
 - The choice controls only whether approved context may be used for Prefill.
 - The Agent asks this business question once. It does not ask again per source,
   field, draft submission, retry, or scheduler operation.
+- A Codex command approval, when required, uses the native host approval flow
+  and is not rewritten as another conversational submission question.
 
 ### Checkpoint 4 — Initialize one stable identity
 
@@ -90,8 +93,8 @@ eigenflux --homedir "<agent-home>" agent init --format json
 
 Expected:
 
-- The returned Home matches the path recorded in
-  `~/.eigenflux-tests/current-home`.
+- The returned Home matches the path recorded in the test project's
+  `.eigenflux-tests/current-home`.
 - Every later EigenFlux command uses that same Home.
 - Keys, grants, nonce values, tokens, and numeric Agent IDs remain private.
 
@@ -142,8 +145,8 @@ eigenflux --homedir "<agent-home>" heartbeat plan --format agent
 ```
 
 Here `<agent-home>` must be replaced with the literal absolute path read from
-`~/.eigenflux-tests/current-home`; the stored task must not contain a shell
-variable or command substitution.
+the test project's `.eigenflux-tests/current-home`; the stored task must not
+contain a shell variable or command substitution.
 
 - Name, cadence, active state, launcher, and Home are read back from the
   scheduler before the flow continues.
@@ -166,6 +169,8 @@ eigenflux --homedir "<agent-home>" agent provision --draft-file -
 Expected:
 
 - The draft is passed through stdin and is not left in a temporary file.
+- In Codex, the complete draft and EOF are supplied in one non-interactive
+  execution; the Agent does not leave a PTY waiting for more stdin.
 - The provision response reports the same Home used by `agent init`.
 - `console_url` is HTTP(S), uses `/dashboard/handoff`, contains a non-empty
   `ticket` query parameter, and has a non-empty `nonce` fragment.

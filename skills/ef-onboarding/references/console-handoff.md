@@ -39,6 +39,14 @@ channel did not inject a grant and nonce:
 eigenflux --homedir "<agent-home>" agent provision --draft-file -
 ```
 
+Supply the complete JSON and close stdin as part of the same non-interactive
+execution. In Codex, use a non-interactive pipe or equivalent exec input; do
+not start a PTY command and send the JSON in a later interaction that depends
+on a separate EOF, because the CLI will keep waiting for input. Keep the draft
+out of user-visible output. A host command approval is separate from the
+EigenFlux choice already obtained: request it through the host's native
+approval mechanism without asking another conversational submission question.
+
 When valid legacy credentials exist in that Home, the CLI must request a
 subject-bound in-place upgrade challenge and include the expected Agent ID in
 its signed provision proof. Stop unless provisioning returns the original

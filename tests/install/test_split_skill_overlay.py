@@ -28,7 +28,11 @@ DOCS = (
 class SplitSkillOverlayTest(unittest.TestCase):
     def run_test_home_setup(self, homedir="", inherited_home=""):
         with tempfile.TemporaryDirectory() as directory:
-            fake_home = Path(directory)
+            root = Path(directory)
+            fake_home = root / "user-home"
+            workspace = root / "test-project"
+            fake_home.mkdir()
+            workspace.mkdir()
             env = dict(
                 os.environ,
                 HOME=str(fake_home),
@@ -48,16 +52,18 @@ class SplitSkillOverlayTest(unittest.TestCase):
             ]
             if homedir:
                 args.extend(("--homedir", homedir))
-            result = subprocess.run(args, env=env, capture_output=True, text=True)
+            result = subprocess.run(
+                args, env=env, cwd=workspace, capture_output=True, text=True
+            )
             self.assertEqual(result.returncode, 0, result.stderr)
 
-            pointer = fake_home / ".eigenflux-tests/current-home"
+            pointer = workspace / ".eigenflux-tests/current-home"
             self.assertTrue(pointer.is_file())
             resolved = pointer.read_text().strip()
             self.assertIn(f"resolved={resolved}", result.stdout)
             self.assertIn(f"flag={resolved}", result.stdout)
             self.assertTrue(Path(resolved).is_dir())
-            return fake_home, resolved
+            return workspace, resolved
 
     def run_overlay(self, failed_doc=""):
         with tempfile.TemporaryDirectory() as directory:
@@ -134,10 +140,12 @@ printf 'branch:%s' "$2" > "$4"
 
     def test_creates_fresh_test_home_instead_of_reusing_inherited_home(self):
         inherited = "/existing/production/.eigenflux"
-        fake_home, resolved = self.run_test_home_setup(inherited_home=inherited)
+        workspace, resolved = self.run_test_home_setup(inherited_home=inherited)
         self.assertNotEqual(resolved, inherited)
         self.assertTrue(
-            resolved.startswith(str(fake_home / ".eigenflux-tests/split-onboarding-"))
+            str(Path(resolved).resolve()).startswith(
+                str((workspace / ".eigenflux-tests/split-onboarding-").resolve())
+            )
         )
         self.assertTrue(resolved.endswith("/.eigenflux"))
 

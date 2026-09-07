@@ -165,8 +165,11 @@ resolve_eigenflux_home() {
 # --homedir, every installer run gets a new identity directory even when the
 # invoking host already exports its production EIGENFLUX_HOME. Keep a stable
 # pointer so the Agent can reuse the same resolved Home throughout this run.
+# Keep the default under the current test project so Codex workspace-write can
+# access it without introducing an approval that production's fixed Home would
+# handle through host configuration.
 prepare_split_test_home() {
-  TEST_HOME_ROOT="$HOME/.eigenflux-tests"
+  TEST_HOME_ROOT="${EIGENFLUX_TEST_HOME_ROOT:-$PWD/.eigenflux-tests}"
   TEST_HOME_POINTER="$TEST_HOME_ROOT/current-home"
 
   if [ -n "$HOMEDIR_FLAG" ]; then

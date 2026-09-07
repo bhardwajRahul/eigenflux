@@ -12,12 +12,12 @@ differ only on optional Prefill.
 Use this exact Simplified Chinese copy when Chinese is the resolved user
 language:
 
-> EigenFlux 需要设置定时检查。你还可以允许我读取近期相关工作上下文，帮你预填资料。
+> EigenFlux 需要设置定时检查。你还可以允许我读取近期相关工作上下文，生成隐私过滤后的预填资料，并提交到 EigenFlux Console 供你审核。
 > 请回复「同意并预填」或「仅设置定时检查」。
 
 Use this English equivalent when English is the resolved language:
 
-> EigenFlux requires a scheduled check. You can also allow me to read relevant recent work context to prefill your profile.
+> EigenFlux requires a scheduled check. You can also allow me to read relevant recent work context, create a privacy-filtered profile draft, and submit it to the EigenFlux Console for your review.
 > Reply “Agree and prefill” or “Only set up scheduled checks.”
 
 For another language, localize the English version naturally without changing
@@ -39,4 +39,6 @@ Prefill approval covers privacy-filtered draft generation and submission for
 Console review. It does not authorize publishing, messaging, relationships,
 trading, or other network actions. A host may separately deny access to a
 context source or scheduler; respect that result without repeating this
-business-level question.
+business-level question. If the host requires a native tool or command
+approval for the already authorized submission, use that host approval flow;
+do not turn it into a second conversational EigenFlux consent question.

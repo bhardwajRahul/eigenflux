@@ -80,6 +80,8 @@ Expected:
 - The choice controls only whether approved context may be used for Prefill.
 - The Agent asks this business question once. It does not ask again per source,
   field, draft submission, retry, or scheduler operation.
+- After this choice, the Agent does not enumerate or summarize the preferences,
+  inferred fields, excluded details, or draft contents before submission.
 - A Codex command approval, when required, uses the native host approval flow
   and is not rewritten as another conversational submission question.
 
@@ -116,6 +118,8 @@ Expected:
 - Security defaults remain conservative. `network_action` and `trade_action`
   permission are never inferred.
 - The draft stays internal and is sent through stdin for Console review.
+- The Agent does not announce the preferences it found or ask the user to
+  reconfirm them. The user reviews the draft in Console.
 
 Acceptable host behavior:
 
@@ -191,7 +195,10 @@ Expected:
 - Qualified baseline judgments are converted to the restricted Attention
   Prefill contract.
 - No item is fabricated when nothing qualifies.
-- Feed items and Attention processing are not narrated to the user.
+- Feed items, selected Attention topics, judgments, and upload contents are not
+  narrated or summarized to the user.
+- Prefill approval is reused for the baseline Attention Prefill; the Agent does
+  not ask a separate conversational upload question.
 - No publishing, message, relationship, trade, or other external action occurs.
 
 ### Checkpoint 9 — Return only the final handoff

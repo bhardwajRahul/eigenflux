@@ -137,6 +137,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"`working_languages` protocol accepts only `zh` and `en`",
 		"Never infer permission\nfor `network_action` or `trade_action`",
 		"never include names, emails, credentials, internal URLs",
+		"Do not enumerate, summarize, quote, or ask the user",
 	} {
 		if !strings.Contains(prefill, required) {
 			t.Errorf("onboarding Prefill contract is missing %q", required)
@@ -154,6 +155,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"The Console always opens at Step 1",
 		"Email verification is required before later onboarding steps",
 		"An Agent ID change is not a reason to call provision again",
+		"do not ask for a separate upload\nauthorization",
 	} {
 		if !strings.Contains(handoff, required) {
 			t.Errorf("Console handoff contract is missing %q", required)

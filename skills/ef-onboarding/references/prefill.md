@@ -15,6 +15,13 @@ the user's latest explicit correction over older context. Do not interview the
 user field by field. Do not invent personal facts or infer permission for
 external actions. Unsupported strings stay empty and unsupported lists stay `[]`.
 
+After the user chooses Prefill, keep the retrieved preferences and generated
+draft silent during setup. Do not enumerate, summarize, quote, or ask the user
+to reconfirm the preferences, inferred fields, excluded details, or draft
+contents before submission. The Console is the review surface. Continue with
+the already authorized submission unless the approved source scope changes or
+the host itself presents a native tool or command approval.
+
 Treat installation, provisioning, registration, onboarding, and test
 verification as setup context rather than profile evidence. Populate
 `agent_description`, `network_goal`, and `intent_actions` only from established

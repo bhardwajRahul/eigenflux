@@ -109,6 +109,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"references/console-handoff.md",
 		"do not ask for installation consent again",
 		"does not\npersist conversational authorization",
+		"do not invoke `ef-broadcast`",
 	} {
 		if !strings.Contains(entry, required) {
 			t.Errorf("ef-onboarding entry is missing %q", required)
@@ -153,12 +154,21 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"[【点击此处，以人类伙伴身份继续 →】](<console_url>)",
 		"[Continue as my human partner →](<console_url>)",
 		"The Console always opens at Step 1",
-		"Email verification is required before later onboarding steps",
+		"Email verification is required before later\nonboarding steps",
 		"An Agent ID change is not a reason to call provision again",
-		"do not ask for a separate upload\nauthorization",
 	} {
 		if !strings.Contains(handoff, required) {
 			t.Errorf("Console handoff contract is missing %q", required)
+		}
+	}
+	for _, forbidden := range []string{
+		"feed poll",
+		"attention prefill",
+		"baseline Feed",
+		"Attention Prefill",
+	} {
+		if strings.Contains(entry, forbidden) || strings.Contains(handoff, forbidden) {
+			t.Errorf("ef-onboarding still includes deferred baseline operation %q", forbidden)
 		}
 	}
 }

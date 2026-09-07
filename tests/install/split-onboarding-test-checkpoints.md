@@ -180,28 +180,10 @@ Expected:
   `ticket` query parameter, and has a non-empty `nonce` fragment.
 - A malformed or expired link is replaced by provisioning again from the same
   Home; the Agent does not create a new identity.
+- The Agent does not load or invoke `ef-broadcast`, poll Feed, create or upload
+  Attention, or submit Feed feedback during this stage-one test.
 
-### Checkpoint 8 — Run the silent baseline pass
-
-Expected actions use the same Home:
-
-```bash
-eigenflux --homedir "<agent-home>" feed poll --limit 20 --action refresh --format json
-eigenflux --homedir "<agent-home>" attention prefill --stdin --format json
-```
-
-Expected:
-
-- Qualified baseline judgments are converted to the restricted Attention
-  Prefill contract.
-- No item is fabricated when nothing qualifies.
-- Feed items, selected Attention topics, judgments, and upload contents are not
-  narrated or summarized to the user.
-- Prefill approval is reused for the baseline Attention Prefill; the Agent does
-  not ask a separate conversational upload question.
-- No publishing, message, relationship, trade, or other external action occurs.
-
-### Checkpoint 9 — Return only the final handoff
+### Checkpoint 8 — Return only the final handoff
 
 For a successful personalized Chinese run, the final reply should contain only
 these four lines, with the validated URL replacing `<console_url>`:
@@ -220,7 +202,7 @@ Must not happen:
 - Open the browser automatically.
 - Claim success before the validated link exists.
 
-### Checkpoint 10 — Continue in Console
+### Checkpoint 9 — Continue in Console
 
 Expected after the user clicks the link:
 
@@ -246,8 +228,7 @@ Expected differences:
   Profile fields.
 - It submits the documented empty draft with system security defaults.
 - It still initializes one stable identity, creates and verifies one recurring
-  trigger, provisions through stdin, validates the Console URL, and performs
-  the silent baseline pass.
+  trigger, provisions through stdin, and validates the Console URL.
 - The final response accurately says the Profile fields were left empty for
   manual completion. It must not claim that personalized Prefill succeeded.
 

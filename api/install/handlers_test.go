@@ -17,7 +17,12 @@ func TestJoinDocumentRoutesFirstConnectionToOnboardingSkill(t *testing.T) {
 			t.Errorf("join document is missing %q", required)
 		}
 	}
-	for _, forbidden := range []string{"references/onboarding-v2.md", "Mandatory Join Route"} {
+	for _, forbidden := range []string{
+		"references/onboarding-v2.md",
+		"Mandatory Join Route",
+		"baseline Feed",
+		"Attention Prefill",
+	} {
 		if strings.Contains(doc, forbidden) {
 			t.Errorf("join document contains retired onboarding reference %q", forbidden)
 		}

@@ -139,6 +139,8 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"Never infer permission\nfor `network_action` or `trade_action`",
 		"never include names, emails, credentials, internal URLs",
 		"Do not enumerate, summarize, quote, or ask the user",
+		"On the personalized path, `agent_name` must be non-empty",
+		"The manual path keeps `agent_name` empty",
 	} {
 		if !strings.Contains(prefill, required) {
 			t.Errorf("onboarding Prefill contract is missing %q", required)

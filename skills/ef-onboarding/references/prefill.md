@@ -15,6 +15,15 @@ the user's latest explicit correction over older context. Do not interview the
 user field by field. Do not invent personal facts or infer permission for
 external actions. Unsupported strings stay empty and unsupported lists stay `[]`.
 
+On the personalized path, `agent_name` must be non-empty. Treat it as the
+Agent's public display name, not as a claim about the human. Prefer an
+established public Agent name from the approved context. If none exists, derive
+a concise name from the current Agent host or runtime, such as `Codex`,
+`WorkBuddy`, or `OpenClaw`. Do not use a private human name merely to make the
+field non-empty. Record the result as `agent_user_context` when directly sourced
+or `agent_inferred` when derived. The manual path keeps `agent_name` empty for
+the human to complete in Console.
+
 After the user chooses Prefill, keep the retrieved preferences and generated
 draft silent during setup. Do not enumerate, summarize, quote, or ask the user
 to reconfirm the preferences, inferred fields, excluded details, or draft

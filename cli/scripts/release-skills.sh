@@ -1,5 +1,5 @@
 #!/bin/bash
-set -e
+set -euo pipefail
 
 # ============================================================
 # release-skills.sh — ship a skills change WITHOUT a CLI release.
@@ -18,12 +18,21 @@ CLI_DIR="$(cd "$SCRIPT_DIR/.."; pwd)"
 PROJECT_ROOT="$(cd "$CLI_DIR/.."; pwd)"
 BUILD_DIR="$PROJECT_ROOT/build/cli"
 
+# Local/manual recovery uses the same serialized publisher as automatic releases.
+if [[ "${GITHUB_ACTIONS:-}" != "true" ]]; then
+  exec gh workflow run release-skills.yml --repo phronesis-io/eigenflux --ref main
+fi
+if [[ "${GITHUB_WORKFLOW_REF:-}" != "phronesis-io/eigenflux/.github/workflows/release-skills.yml@refs/heads/main" ]]; then
+  echo "Skills publishing requires the Release Skills workflow on main" >&2
+  exit 1
+fi
+
 source "$CLI_DIR/.cli.config"
 [[ -f "$CLI_DIR/.cli.env" ]] && source "$CLI_DIR/.cli.env"
 
 GREEN='\033[0;32m'; RED='\033[0;31m'; CYAN='\033[0;36m'; NC='\033[0m'
 
-if [[ -z "$R2_ACCESS_KEY_ID" || -z "$R2_SECRET_ACCESS_KEY" ]]; then
+if [[ -z "${R2_ACCESS_KEY_ID:-}" || -z "${R2_SECRET_ACCESS_KEY:-}" ]]; then
   echo -e "${RED}R2 credentials missing in .cli.env${NC}"; exit 1
 fi
 if [[ -z "${EIGENFLUX_SKILLS_SIGNING_KEY_FILE:-}" || -z "${EIGENFLUX_SKILLS_VERIFY_PUBLIC_KEY:-}" ]]; then
@@ -45,6 +54,13 @@ DERIVED_SKILLS_PUBLIC_KEY=$(cd "$CLI_DIR" && "${GO_CMD[@]}" run ./cmd/manifestge
 SKILLS_SRC="$PROJECT_ROOT/skills"
 SKILLS_STAGE="$BUILD_DIR/skills-stage"
 mkdir -p "$BUILD_DIR"
+export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
+export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
+( cd "$CLI_DIR" && "${GO_CMD[@]}" build \
+    -ldflags "-X cli.eigenflux.ai/internal/skills.VerifyPublicKeyBase64=${EIGENFLUX_SKILLS_VERIFY_PUBLIC_KEY}" \
+    -o "$BUILD_DIR/manifestcheck" ./cmd/manifestcheck )
+SKILLS_SEQUENCE=$(python3 "$SCRIPT_DIR/skills-release-state.py" prepare --build "$BUILD_DIR")
+echo "Allocated signed Skills sequence $SKILLS_SEQUENCE from R2 release history"
 
 # Discover every distributable official ef-* Skill from the source tree.
 SKILLS_ALLOWLIST=()
@@ -78,11 +94,17 @@ echo -e "${CYAN}Built skills bundle (${REVISION}); publishing to R2 skills/lates
 export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
 S3_ARGS="--endpoint-url $R2_ENDPOINT"
+# Exercise the exact signed archive through Sync before any publication write.
+( cd "$CLI_DIR" && "${GO_CMD[@]}" run \
+    -ldflags "-X cli.eigenflux.ai/internal/skills.VerifyPublicKeyBase64=${EIGENFLUX_SKILLS_VERIFY_PUBLIC_KEY}" \
+    ./cmd/releaseverify --manifest "$BUILD_DIR/manifest.json" --bundle "$BUILD_DIR" )
+python3 "$SCRIPT_DIR/skills-release-state.py" reserve --build "$BUILD_DIR"
 for f in skills.tar.gz skills.tar.gz.sha256 manifest.json; do
   aws s3 cp "$BUILD_DIR/$f" "s3://$R2_BUCKET/skills/latest/$f" $S3_ARGS --quiet
   aws s3 cp "$BUILD_DIR/$f" "s3://$R2_BUCKET/cli/latest/$f"    $S3_ARGS --quiet
   echo -e "${GREEN}  $f → skills/latest + cli/latest${NC}"
 done
+python3 "$SCRIPT_DIR/skills-release-state.py" verify --build "$BUILD_DIR"
 # Post-publish verification: fetch the tarball through the CDN with the SAME
 # cache-busting key clients will use (?rev=<revision>). This both pre-warms the
 # edge AFTER R2 is consistent and catches the race where an edge caches the OLD
@@ -94,7 +116,7 @@ CDN_BASE="${EIGENFLUX_CDN:-https://cdn.eigenflux.ai}"
 sleep 5
 VERIFY_OK=false
 for i in 1 2 3; do
-  GOT_SHA=$(curl -fsSL "$CDN_BASE/skills/latest/skills.tar.gz?rev=$REV_KEY" 2>/dev/null | shasum -a 256 | awk '{print $1}')
+  GOT_SHA=$(curl -fsSL "$CDN_BASE/skills/latest/skills.tar.gz?rev=$REV_KEY" 2>/dev/null | shasum -a 256 | awk '{print $1}' || true)
   if [[ -n "$WANT_SHA" && "$GOT_SHA" == "$WANT_SHA" ]]; then VERIFY_OK=true; break; fi
   echo -e "${CYAN}CDN not consistent yet (try $i): got ${GOT_SHA:0:16}, want ${WANT_SHA:0:16}; retrying in 10s...${NC}"
   sleep 10
@@ -108,4 +130,8 @@ if [[ "$VERIFY_OK" != "true" ]]; then
 fi
 echo -e "${GREEN}CDN verified: rev-keyed tarball matches (rev $REV_KEY).${NC}"
 
+# Check the actual client path through both CDN aliases, including atomic install.
+( cd "$CLI_DIR" && "${GO_CMD[@]}" run \
+    -ldflags "-X cli.eigenflux.ai/internal/skills.VerifyPublicKeyBase64=${EIGENFLUX_SKILLS_VERIFY_PUBLIC_KEY}" \
+    ./cmd/releaseverify --manifest "$BUILD_DIR/manifest.json" --cdn "$CDN_BASE" )
 echo -e "${GREEN}Done. Skills are live on R2 — clients pick them up on next sync. No CLI release.${NC}"

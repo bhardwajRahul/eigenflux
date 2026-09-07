@@ -27,6 +27,13 @@ if [[ -z "$R2_ACCESS_KEY_ID" || -z "$R2_SECRET_ACCESS_KEY" ]]; then
   exit 1
 fi
 
+# Route the legacy emergency entry point through the serialized Skills publisher.
+# Unset the switch after dispatch so this invocation only uploads CLI binaries.
+if [[ "${EIGENFLUX_PUBLISH_SKILLS_WITH_CLI:-false}" == "true" ]]; then
+  bash "$SCRIPT_DIR/release-skills.sh"
+  EIGENFLUX_PUBLISH_SKILLS_WITH_CLI=false
+fi
+
 export AWS_ACCESS_KEY_ID="$R2_ACCESS_KEY_ID"
 export AWS_SECRET_ACCESS_KEY="$R2_SECRET_ACCESS_KEY"
 

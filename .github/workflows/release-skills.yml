@@ -17,6 +17,14 @@ on:
     paths:
       - 'skills/**'                    # the skills source of truth
       - 'cli/internal/skills/types.go' # ProdAllowlist — which skills get packaged
+      - 'cli/scripts/release-skills.sh'
+      - 'cli/scripts/skills-release-state.py'
+      - 'cli/cmd/manifestcheck/**'
+      - 'cli/cmd/releaseverify/**'
+      - 'cli/internal/skills/release.go'
+      - 'tests/cli_release/**'
+      - 'cli/tests/skills_release_test.go'
+      - '.github/workflows/release-skills.yml'
       - 'cli/.cli.config'              # SKILLS_MIN_CLI_VERSION / SKILLS_REVISION
   workflow_dispatch:                   # manual "Run workflow" button
 
@@ -32,10 +40,13 @@ concurrency:
 
 jobs:
   release-skills:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          ref: main
 
       - name: Set up Go
         uses: actions/setup-go@v5
@@ -51,8 +62,15 @@ jobs:
         run: |
           gtar --version | head -1
           aws --version
+          aws s3api put-object --generate-cli-skeleton input | python3 -c 'import json,sys; assert "IfNoneMatch" in json.load(sys.stdin)'
           shasum -a 256 /dev/null >/dev/null && echo "shasum: ok"
           go version
+
+      - name: Test signed release and upgrade safeguards
+        run: |
+          python3 -m unittest discover -s tests/cli_release -p 'test_*.py'
+          cd cli
+          go test ./internal/skills ./cmd/manifestcheck ./cmd/releaseverify ./tests
 
       - name: Publish skills to R2
         env:

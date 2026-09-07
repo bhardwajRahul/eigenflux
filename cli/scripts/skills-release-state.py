@@ -1,0 +1,130 @@
+#!/usr/bin/env python3
+"""Allocate and reserve signed Skills releases against R2, never CDN cache."""
+import argparse
+import hashlib
+import json
+import os
+from pathlib import Path
+import re
+import subprocess
+
+LATEST = ("skills/latest", "cli/latest")
+ARCHIVE = "skills/releases/"
+
+
+def aws(*args):
+    try:
+        result = subprocess.run(
+            ["aws", "--endpoint-url", os.environ["R2_ENDPOINT"], "--region", "auto", "s3api", *args,
+             "--bucket", os.environ["R2_BUCKET"], "--output", "json"],
+            check=True, capture_output=True, text=True,
+        )
+    except subprocess.CalledProcessError as error:
+        raise RuntimeError(f"R2 {args[0]} failed: {error.stderr.strip()}") from error
+    return json.loads(result.stdout or "{}")
+
+
+def verified(path, checker):
+    subprocess.run([str(checker), str(path)], check=True, stdout=subprocess.DEVNULL)
+    return json.loads(path.read_text())
+
+
+def archive_head():
+    # AWS CLI pagination is enabled: failed/partial releases also consume a number.
+    listing = aws("list-objects-v2", "--prefix", ARCHIVE)
+    numbers = []
+    for item in listing.get("Contents", []):
+        match = re.fullmatch(r"skills/releases/([1-9][0-9]*)/manifest.json", item["Key"])
+        if match:
+            numbers.append(int(match.group(1)))
+    return max(numbers, default=0)
+
+
+def snapshot(state, checker):
+    records = []
+    for index, prefix in enumerate(LATEST):
+        path = state / f"previous-{index}.json"
+        aws("get-object", "--key", f"{prefix}/manifest.json", str(path))
+        records.append(verified(path, checker))
+    head = archive_head()
+    if head:
+        path = state / "archive-head.json"
+        aws("get-object", "--key", f"{ARCHIVE}{head}/manifest.json", str(path))
+        record = verified(path, checker)
+        if record["sequence"] != head:
+            raise RuntimeError("archive key and signed sequence disagree")
+        records.append(record)
+    return records
+
+
+def next_sequence(records):
+    highest = max(record["sequence"] for record in records)
+    if highest >= 2**64 - 1:
+        raise RuntimeError("Skills sequence exhausted")
+    return highest + 1
+
+
+def require_transition(candidate, records, planned):
+    if candidate["sequence"] != planned or planned <= max(r["sequence"] for r in records):
+        raise RuntimeError("release sequence is stale or already used; start a new workflow run")
+
+
+def put_new(path, key):
+    # R2 enforces uniqueness atomically. A collision fails before latest is touched.
+    aws("put-object", "--key", key, "--body", str(path), "--if-none-match", "*")
+
+
+def prepare(state, checker):
+    state.mkdir(parents=True, exist_ok=True)
+    records = snapshot(state, checker)
+    sequence = next_sequence(records)
+    (state / "plan.json").write_text(json.dumps({"sequence": sequence, "records": records}))
+    print(sequence)
+
+
+def reserve(state, checker, build):
+    plan = json.loads((state / "plan.json").read_text())
+    candidate = verified(build / "manifest.json", checker)
+    # Recheck the origin immediately before reserving a sequence and publishing.
+    current = snapshot(state, checker)
+    require_transition(candidate, current, plan["sequence"])
+    if current != plan["records"]:
+        raise RuntimeError("R2 release state changed during build; refusing to publish")
+    digest = hashlib.sha256((build / "skills.tar.gz").read_bytes()).hexdigest()
+    if digest != candidate["tar_sha256"] or digest != (build / "skills.tar.gz.sha256").read_text().strip():
+        raise RuntimeError("built archive does not match signed manifest and sidecar")
+    prefix = f'{ARCHIVE}{candidate["sequence"]}'
+    # Reserve first: interruption must never make the same signed sequence reusable.
+    put_new(build / "manifest.json", f"{prefix}/manifest.json")
+    for name in ("skills.tar.gz", "skills.tar.gz.sha256"):
+        put_new(build / name, f"{prefix}/{name}")
+    print(f'reserved signed sequence {candidate["sequence"]}', flush=True)
+
+
+def verify_live(state, checker, build):
+    expected = verified(build / "manifest.json", checker)
+    for index, prefix in enumerate(LATEST):
+        path = state / f"live-{index}.json"
+        aws("get-object", "--key", f"{prefix}/manifest.json", str(path))
+        if verified(path, checker) != expected:
+            raise RuntimeError(f"{prefix} differs from the reserved signed release")
+    print(f'verified origin sequence {expected["sequence"]}', flush=True)
+
+
+def main():
+    parser = argparse.ArgumentParser()
+    parser.add_argument("action", choices=("prepare", "reserve", "verify"))
+    parser.add_argument("--build", type=Path, required=True)
+    args = parser.parse_args()
+    state = args.build / "release-state"
+    checker = args.build / "manifestcheck"
+    if args.action == "prepare":
+        prepare(state, checker)
+    elif args.action == "reserve":
+        reserve(state, checker, args.build)
+    else:
+        verify_live(state, checker, args.build)
+
+
+if __name__ == "__main__":
+    main()

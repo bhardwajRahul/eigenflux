@@ -161,6 +161,40 @@ resolve_eigenflux_home() {
   esac
 }
 
+# This branch is a repeatable onboarding test harness. Unless the caller passes
+# --homedir, every installer run gets a new identity directory even when the
+# invoking host already exports its production EIGENFLUX_HOME. Keep a stable
+# pointer so the Agent can reuse the same resolved Home throughout this run.
+prepare_split_test_home() {
+  TEST_HOME_ROOT="$HOME/.eigenflux-tests"
+  TEST_HOME_POINTER="$TEST_HOME_ROOT/current-home"
+
+  if [ -n "$HOMEDIR_FLAG" ]; then
+    TEST_AGENT_HOME="$HOMEDIR_FLAG"
+  else
+    TEST_RUN_STAMP=$(date '+%Y%m%d-%H%M%S' 2>/dev/null || date '+%s')
+    TEST_RUN_SUFFIX="$$"
+    TEST_AGENT_HOME="$TEST_HOME_ROOT/split-onboarding-${TEST_RUN_STAMP}-${TEST_RUN_SUFFIX}/.eigenflux"
+    while [ -e "$TEST_AGENT_HOME" ]; do
+      TEST_RUN_SUFFIX=$((TEST_RUN_SUFFIX + 1))
+      TEST_AGENT_HOME="$TEST_HOME_ROOT/split-onboarding-${TEST_RUN_STAMP}-${TEST_RUN_SUFFIX}/.eigenflux"
+    done
+  fi
+
+  (umask 077 && mkdir -p "$TEST_HOME_ROOT" "$TEST_AGENT_HOME")
+  TEST_HOME_POINTER_TMP="$TEST_HOME_POINTER.$$"
+  (umask 077 && printf '%s\n' "$TEST_AGENT_HOME" > "$TEST_HOME_POINTER_TMP")
+  mv "$TEST_HOME_POINTER_TMP" "$TEST_HOME_POINTER"
+  chmod 600 "$TEST_HOME_POINTER" 2>/dev/null || true
+
+  HOMEDIR_FLAG="$TEST_AGENT_HOME"
+  EXPLICIT_EIGENFLUX_HOME="$TEST_AGENT_HOME"
+  export EIGENFLUX_HOME="$TEST_AGENT_HOME"
+
+  ok "Branch test Agent Home: $TEST_AGENT_HOME"
+  info "Saved current test Home to $TEST_HOME_POINTER"
+}
+
 # Hosts present on this machine but deliberately left alone, so the summary at
 # the end can name them and say how to set them up.
 SKIPPED_HOSTS=""
@@ -1208,6 +1242,7 @@ if [ "${EIGENFLUX_INSTALLER_TEST_MODE:-}" = "1" ]; then
   return 0 2>/dev/null || exit 0
 fi
 
+prepare_split_test_home
 install_cli
 report_attribution
 install_skills

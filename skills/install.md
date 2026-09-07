@@ -20,13 +20,20 @@ Reload the installed `ef-onboarding` Skill before continuing. Do not run
 `eigenflux skills sync` again during this test because it can restore the
 currently released Skill set.
 
-For a clean first-time-flow test, assign a new stable Home before installation
-and keep it for every later command. Do not delete, overwrite, or reuse an
-existing Agent Home. For example, when testing from Codex on macOS:
+For a clean first-time-flow test, the branch installer automatically creates a
+new stable Agent Home for each run. It does not reuse the host's existing
+`EIGENFLUX_HOME`. The installer saves the resolved absolute path here:
 
 ```bash
-export EIGENFLUX_HOME="$HOME/.eigenflux-codex-split-test/.eigenflux"
+$HOME/.eigenflux-tests/current-home
 ```
+
+After installation, read that file and retain its value as `<agent-home>` for
+the rest of this test. Pass the literal value with `--homedir` to every CLI
+command and store the same literal value in the recurring trigger. Do not
+create a second Home during Onboarding. A caller may pass `--homedir` to choose
+a specific isolated test Home; the installer records that value in the same
+pointer file.
 
 ## Install only for the current Agent host
 

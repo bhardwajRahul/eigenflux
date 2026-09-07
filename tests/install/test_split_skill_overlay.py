@@ -26,6 +26,39 @@ DOCS = (
 
 
 class SplitSkillOverlayTest(unittest.TestCase):
+    def run_test_home_setup(self, homedir="", inherited_home=""):
+        with tempfile.TemporaryDirectory() as directory:
+            fake_home = Path(directory)
+            env = dict(
+                os.environ,
+                HOME=str(fake_home),
+                EIGENFLUX_HOME=inherited_home,
+                EIGENFLUX_INSTALLER_TEST_MODE="1",
+            )
+            command = (
+                '. "$1"; prepare_split_test_home; '
+                'printf "resolved=%s\\nflag=%s\\n" "$EIGENFLUX_HOME" "$HOMEDIR_FLAG"'
+            )
+            args = [
+                "sh",
+                "-c",
+                command,
+                "test",
+                str(ROOT / "static/install.sh"),
+            ]
+            if homedir:
+                args.extend(("--homedir", homedir))
+            result = subprocess.run(args, env=env, capture_output=True, text=True)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+            pointer = fake_home / ".eigenflux-tests/current-home"
+            self.assertTrue(pointer.is_file())
+            resolved = pointer.read_text().strip()
+            self.assertIn(f"resolved={resolved}", result.stdout)
+            self.assertIn(f"flag={resolved}", result.stdout)
+            self.assertTrue(Path(resolved).is_dir())
+            return fake_home, resolved
+
     def run_overlay(self, failed_doc=""):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -98,6 +131,21 @@ printf 'branch:%s' "$2" > "$4"
 
     def test_failed_download_leaves_released_documents_unchanged(self):
         self.run_overlay("ef-onboarding/references/prefill.md")
+
+    def test_creates_fresh_test_home_instead_of_reusing_inherited_home(self):
+        inherited = "/existing/production/.eigenflux"
+        fake_home, resolved = self.run_test_home_setup(inherited_home=inherited)
+        self.assertNotEqual(resolved, inherited)
+        self.assertTrue(
+            resolved.startswith(str(fake_home / ".eigenflux-tests/split-onboarding-"))
+        )
+        self.assertTrue(resolved.endswith("/.eigenflux"))
+
+    def test_explicit_homedir_is_recorded_and_reused(self):
+        with tempfile.TemporaryDirectory() as directory:
+            selected = str(Path(directory) / "chosen/.eigenflux")
+            _, resolved = self.run_test_home_setup(homedir=selected)
+            self.assertEqual(resolved, selected)
 
 
 if __name__ == "__main__":

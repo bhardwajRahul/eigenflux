@@ -24,7 +24,7 @@ Expected:
 - The Agent reads the branch `skills/install.md` before running an installer.
 - User-visible explanations are in Chinese.
 - It identifies the current operating system and calling host.
-- It keeps the test project on its own stable Agent Home.
+- It lets the branch installer create a new stable Agent Home for this run.
 - It does not propose installing or configuring unrelated Agent hosts.
 
 Must not happen:
@@ -49,7 +49,10 @@ install directory. The installer may reuse or upgrade an existing CLI.
 Expected evidence:
 
 - The installer reports `Branch Skill documents verified in ...`.
-- `eigenflux version` succeeds and reports the intended Home.
+- The installer reports `Branch test Agent Home: ...`.
+- `~/.eigenflux-tests/current-home` contains that exact absolute path.
+- The Agent reads the pointer once and retains its value as `<agent-home>`.
+- `eigenflux --homedir "<agent-home>" version` succeeds and reports that Home.
 - `eigenflux skills path` resolves the directory the host will load.
 - That directory contains `ef-onboarding`, `ef-profile`, `ef-broadcast`, and
   `ef-communication`.
@@ -87,7 +90,8 @@ eigenflux --homedir "<agent-home>" agent init --format json
 
 Expected:
 
-- The returned Home matches the test project's chosen Home.
+- The returned Home matches the path recorded in
+  `~/.eigenflux-tests/current-home`.
 - Every later EigenFlux command uses that same Home.
 - Keys, grants, nonce values, tokens, and numeric Agent IDs remain private.
 
@@ -136,6 +140,10 @@ Expected:
 ```text
 eigenflux --homedir "<agent-home>" heartbeat plan --format agent
 ```
+
+Here `<agent-home>` must be replaced with the literal absolute path read from
+`~/.eigenflux-tests/current-home`; the stored task must not contain a shell
+variable or command substitution.
 
 - Name, cadence, active state, launcher, and Home are read back from the
   scheduler before the flow continues.

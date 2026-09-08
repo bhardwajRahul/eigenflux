@@ -277,7 +277,7 @@ validated.
 
 | Pending product decision | Current tested behavior | Merge decision required |
 |---|---|---|
-| Initial Feed and Attention baseline | Onboarding ends after the validated Console handoff; baseline Feed polling, Attention Prefill, and feedback are deferred. | Decide whether this remains the production boundary or whether a separately designed post-Console flow restores it. |
+| Initial Feed and Attention baseline | Stage 1 restores one silent baseline Feed pull to register the runtime. Attention Prefill and feedback remain deferred. | Verify the connection result, then decide separately when to restore Attention Prefill. Keep feedback in the completed-onboarding heartbeat lifecycle. |
 | Manual path Agent Card | `仅设置定时检查` leaves all Agent Card fields empty and applies only system security defaults. | Decide whether safe host-derived defaults should be introduced later with matching consent language. |
 | Recurring task execution permissions | Creating and reading back a task does not itself prove that its later run can write the Agent Home and Skill lock or reach the network. | Add or perform one real scheduled-run verification before declaring the recurring connection complete. |
 

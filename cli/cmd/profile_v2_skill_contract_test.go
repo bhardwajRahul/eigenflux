@@ -118,8 +118,9 @@ func TestOnboardingSkillContract(t *testing.T) {
 
 	consent := readRepoFile(t, repoRoot, "skills/ef-onboarding/references/consent.md")
 	for _, required := range []string{
-		"EigenFlux 需要设置定时检查。你还可以允许我读取近期相关工作上下文，生成隐私过滤后的预填资料，并提交到 EigenFlux Console 供你审核。",
+		"EigenFlux 需要设置定时检查，并完成一次只读的初次网络检查；检查结果只会显示在你的 Console 中。你还可以允许我读取近期相关工作上下文，生成隐私过滤后的预填资料，并提交到 EigenFlux Console 供你审核。",
 		"请回复「同意并预填」或「仅设置定时检查」。",
+		"one read-only initial network check",
 		"Agree and prefill",
 		"Only set up scheduled checks",
 		"do not infer Prefill permission",
@@ -158,16 +159,21 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"The Console always opens at Step 1",
 		"Email verification is required before later\nonboarding steps",
 		"An Agent ID change is not a reason to call provision again",
+		"eigenflux --homedir \"<agent-home>\" feed poll --limit 20 --action refresh --format json",
+		"`schema_version: feed.v2`",
+		"`personalization.mode: baseline`",
+		"Do not load `ef-broadcast`",
+		"does\nnot authorize or perform Feed feedback",
 	} {
 		if !strings.Contains(handoff, required) {
 			t.Errorf("Console handoff contract is missing %q", required)
 		}
 	}
 	for _, forbidden := range []string{
-		"feed poll",
 		"attention prefill",
-		"baseline Feed",
 		"Attention Prefill",
+		"feed feedback --items",
+		"attention prefill --stdin",
 	} {
 		if strings.Contains(entry, forbidden) || strings.Contains(handoff, forbidden) {
 			t.Errorf("ef-onboarding still includes deferred baseline operation %q", forbidden)

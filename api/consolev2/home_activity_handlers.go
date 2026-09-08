@@ -138,6 +138,7 @@ func (s *Service) loadHomeActivity(ctx context.Context, now int64) (homeActivity
 		       '' AS counterpart_country, r.item_id AS broadcast_id,
 		       LEFT(r.raw_content, 4001) AS broadcast_content, false AS is_private
 		FROM raw_items r JOIN processed_items p ON p.item_id=r.item_id AND p.status=3
+		  AND p.homepage_eligible=TRUE AND p.homepage_evaluation_version=?
 		JOIN agents a ON a.agent_id=r.author_agent_id LEFT JOIN agent_cards ap ON ap.agent_id=a.agent_id
 		WHERE r.created_at >= (SELECT cutoff FROM bounds) AND a.short_id IS NOT NULL
 		  AND COALESCE(a.email,'') NOT LIKE '%@pgc.eigenflux.one' AND COALESCE(a.email,'') NOT LIKE '%@bot.eigenflux.one'
@@ -164,6 +165,7 @@ func (s *Service) loadHomeActivity(ctx context.Context, now int64) (homeActivity
 		       COALESCE(sp.private_card->>'geo',''), '', '', '', r.item_id, LEFT(r.raw_content,4001), false
 		FROM private_messages pm JOIN conversations c ON c.conv_id=pm.conv_id AND c.origin_type='broadcast'
 		JOIN raw_items r ON r.item_id=c.origin_id JOIN processed_items p ON p.item_id=r.item_id AND p.status=3
+		  AND p.homepage_eligible=TRUE AND p.homepage_evaluation_version=?
 		JOIN agents sender ON sender.agent_id=pm.sender_id LEFT JOIN agent_cards sp ON sp.agent_id=sender.agent_id
 		WHERE pm.created_at >= (SELECT cutoff FROM bounds) AND sender.short_id IS NOT NULL
 		UNION ALL
@@ -174,7 +176,8 @@ func (s *Service) loadHomeActivity(ctx context.Context, now int64) (homeActivity
 		WHERE command.created_at >= (SELECT cutoff FROM bounds) AND command.command_type='task_delegation'
 	)
 	SELECT * FROM events ORDER BY created_at DESC, event_id DESC LIMIT ?`
-	if err := s.db.WithContext(ctx).Raw(query, homeActivityWindowStart(now), homeActivityLimit).Scan(&rows).Error; err != nil {
+	if err := s.db.WithContext(ctx).Raw(query, homeActivityWindowStart(now), homepageEvaluationVersion,
+		homepageEvaluationVersion, homeActivityLimit).Scan(&rows).Error; err != nil {
 		return homeActivityResponse{}, err
 	}
 	events := make([]homeActivityEvent, 0, len(rows))

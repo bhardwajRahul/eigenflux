@@ -230,8 +230,9 @@ Expected differences:
 - It submits the documented empty draft with system security defaults.
 - It still initializes one stable identity, creates and verifies one recurring
   trigger, provisions through stdin, and validates the Console URL.
-- The final response accurately says the Profile fields were left empty for
-  manual completion. It must not claim that personalized Prefill succeeded.
+- The final response uses the same canonical four-line handoff as the
+  personalized path. That template does not claim that personalized Prefill
+  succeeded; it must not be replaced by a separate empty-fields explanation.
 
 ## Failure checkpoints
 

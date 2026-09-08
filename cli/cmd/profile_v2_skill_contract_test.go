@@ -168,6 +168,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"does not\npublish Active Attention",
 		"zero qualified items skips the upload and is a valid",
 		"does\nnot authorize or perform Feed feedback",
+		"Use this\nsame success template when personalization was declined",
 	} {
 		if !strings.Contains(handoff, required) {
 			t.Errorf("Console handoff contract is missing %q", required)
@@ -177,6 +178,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"feed feedback --items",
 		"attention publish --stdin",
 		"feed event record",
+		"This manual-path response replaces the four-line success template",
 	} {
 		if strings.Contains(entry, forbidden) || strings.Contains(handoff, forbidden) {
 			t.Errorf("ef-onboarding includes an operation outside the onboarding baseline %q", forbidden)

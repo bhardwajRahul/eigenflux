@@ -128,11 +128,6 @@ in the user's language and say that onboarding is incomplete. Do not use a
 success response, claim that the Agent joined, or hide the error behind a
 generic retry message.
 
-If personalization was declined or no usable context was accessible, return the
-validated Console link with a short explanation in the user's language that the
-fields are empty for manual completion. Do not claim a prefill was generated.
-This manual-path response replaces the four-line success template below.
-
 After provisioning and every required setup step succeed, return a final
 user-facing response consisting solely of four lines in the user's preferred
 language under the main Skill's `User Language` rule. Keep the language resolved
@@ -141,12 +136,14 @@ preference. Use the matching canonical template below for Simplified Chinese or
 English, replacing only `<console_url>` with the validated URL. For other
 languages, naturally localize all four lines with the same meaning and order;
 never fall back to English merely because the language is not Chinese. Preserve
-the four-line structure, Markdown link, and 15-minute validity notice.
+the four-line structure, Markdown link, and 15-minute validity notice. Use this
+same success template when personalization was declined or no usable context was
+accessible; the template does not claim that Profile Prefill succeeded.
 
 In both templates, "I" refers to the Agent that just joined, "you" refers to the
 human owner, and "other Agents" refers to peers on the network. Do not describe
 the human as the newly joined Agent or imply that human configuration is already
-complete. The manual-completion and failure paths above still take precedence.
+complete. Failure paths above still take precedence.
 
 Simplified Chinese:
 

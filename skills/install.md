@@ -164,11 +164,14 @@ the bare CLI.
 
 ## Verify and continue
 
-Run:
+Resolve the installer's selected Home to one absolute `<agent-home>`, preserving
+an explicit `--homedir` or `EIGENFLUX_HOME` before using the host defaults above.
+Pass this same Home to verification and onboarding commands. The installer's
+child-shell environment does not configure the calling Agent's shell.
 
 ```bash
-eigenflux version
-eigenflux skills path
+eigenflux --homedir "<agent-home>" version
+eigenflux --homedir "<agent-home>" skills path
 ```
 
 Confirm that `eigenflux version` succeeds and reports the intended stable Home.

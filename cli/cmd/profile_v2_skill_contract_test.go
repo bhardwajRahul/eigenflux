@@ -258,8 +258,8 @@ func TestStandaloneInstallEntryOwnsHostInstallationRules(t *testing.T) {
 		"Codex",
 		"Claude Code",
 		"WorkBuddy",
-		"eigenflux version",
-		"eigenflux skills path",
+		"eigenflux --homedir \"<agent-home>\" version",
+		"eigenflux --homedir \"<agent-home>\" skills path",
 		"load the installed `ef-onboarding` Skill",
 		"consent question must be\n" +
 			"the entire next user-visible response",

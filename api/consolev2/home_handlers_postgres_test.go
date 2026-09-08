@@ -154,13 +154,16 @@ func TestHomeHTTPContracts(t *testing.T) {
 	oldDemandItemID := agentIDValue + 11
 	newDemandItemID := agentIDValue + 12
 	newPublishItemID := agentIDValue + 13
+	ineligibleItemID := agentIDValue + 14
 	if err := db.Exec(`INSERT INTO raw_items (item_id, author_agent_id, raw_content, created_at) VALUES
 		(?, ?, 'new Agent first voice', ?), (?, ?, 'older demand', ?),
-		(?, ?, 'newer demand', ?), (?, ?, 'newest general publish', ?)`,
+		(?, ?, 'newer demand', ?), (?, ?, 'newest general publish', ?),
+		(?, ?, 'homepage-ineligible content', ?)`,
 		firstVoiceItemID, agentIDValue, now-4000,
 		oldDemandItemID, demandAgentID, now-3000,
 		newDemandItemID, demandAgentID, now-2000,
-		newPublishItemID, publishAgentID, now-1000).Error; err != nil {
+		newPublishItemID, publishAgentID, now-1000,
+		ineligibleItemID, agentIDValue, now-500).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`INSERT INTO processed_items
@@ -169,11 +172,13 @@ func TestHomeHTTPContracts(t *testing.T) {
 		VALUES (?, 3, 'new Agent first voice', 'info', 0.70, 'en', ?, TRUE, ?, FALSE),
 		       (?, 3, 'older demand', 'demand', 0.95, 'en', ?, TRUE, ?, FALSE),
 		       (?, 3, 'newer demand', 'demand', 0.80, 'en', ?, TRUE, ?, FALSE),
-		       (?, 3, 'newest general publish', 'info', 0.99, 'en', ?, TRUE, ?, FALSE)`,
+		       (?, 3, 'newest general publish', 'info', 0.99, 'en', ?, TRUE, ?, FALSE),
+		       (?, 3, 'homepage-ineligible content', 'info', 0.99, 'en', ?, FALSE, ?, FALSE)`,
 		firstVoiceItemID, now, homepageEvaluationVersion,
 		oldDemandItemID, now, homepageEvaluationVersion,
 		newDemandItemID, now, homepageEvaluationVersion,
-		newPublishItemID, now, homepageEvaluationVersion).Error; err != nil {
+		newPublishItemID, now, homepageEvaluationVersion,
+		ineligibleItemID, now, homepageEvaluationVersion).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := db.Exec(`INSERT INTO item_stats
@@ -187,8 +192,8 @@ func TestHomeHTTPContracts(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Cleanup(func() {
-		_ = db.Exec(`DELETE FROM processed_items WHERE item_id IN (?, ?, ?, ?)`, firstVoiceItemID, oldDemandItemID, newDemandItemID, newPublishItemID).Error
-		_ = db.Exec(`DELETE FROM raw_items WHERE item_id IN (?, ?, ?, ?)`, firstVoiceItemID, oldDemandItemID, newDemandItemID, newPublishItemID).Error
+		_ = db.Exec(`DELETE FROM processed_items WHERE item_id IN (?, ?, ?, ?, ?)`, firstVoiceItemID, oldDemandItemID, newDemandItemID, newPublishItemID, ineligibleItemID).Error
+		_ = db.Exec(`DELETE FROM raw_items WHERE item_id IN (?, ?, ?, ?, ?)`, firstVoiceItemID, oldDemandItemID, newDemandItemID, newPublishItemID, ineligibleItemID).Error
 	})
 
 	t.Run("official contacts remain first across pages", func(t *testing.T) {
@@ -270,6 +275,9 @@ func TestHomeHTTPContracts(t *testing.T) {
 					"new_agent_first_voice":  strconv.FormatInt(firstVoiceItemID, 10),
 				})
 			}
+			if path == "/api/v2/console/home/activity" {
+				assertHomeActivityExcludesBroadcast(t, rows, ineligibleItemID)
+			}
 		}
 		for _, key := range []string{discoveryKey, homeActivityCacheKey, worthKey} {
 			raw, err := redisClient.Get(context.Background(), key).Bytes()
@@ -297,6 +305,17 @@ func TestHomeHTTPContracts(t *testing.T) {
 			}
 		}
 	})
+}
+
+func assertHomeActivityExcludesBroadcast(t *testing.T, rows []interface{}, itemID int64) {
+	t.Helper()
+	wantID := "broadcast:" + strconv.FormatInt(itemID, 10)
+	for _, raw := range rows {
+		row, ok := raw.(map[string]interface{})
+		if ok && row["id"] == wantID {
+			t.Fatalf("homepage-ineligible broadcast appeared in home activity: %#v", row)
+		}
+	}
 }
 
 func assertHomeWorthWatchingReasons(t *testing.T, rows []interface{}, want map[string]string) {

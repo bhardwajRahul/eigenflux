@@ -251,3 +251,44 @@ save the exact user-visible message, relevant tool call, number of repeated
 questions or scheduler entries, and the first checkpoint where behavior
 diverged. Do not record credentials, nonce values, full ticket URLs, private
 context, or OTPs.
+
+## Pre-merge cleanup register
+
+Complete this register after manual testing and before merging the branch. It
+separates temporary branch-test delivery from the production behavior being
+validated.
+
+### Remove or replace test-only delivery
+
+| Test-only mechanism | Location | Required cleanup | Verification |
+|---|---|---|---|
+| Branch-test explanation and the instruction not to run `eigenflux skills sync` again | `skills/install.md` | Remove the complete `Branch test` section. Production Skill synchronization remains an internal installer or plugin operation and must not be presented as an Agent decision. | No `Branch test`, `during this test`, or negative second-sync instruction remains. |
+| Raw URLs pinned to `codex/split-install-onboarding-skills` | `skills/install.md` | Replace every branch URL with the canonical production installer URL appropriate to the platform. | Repository-wide search finds no branch name or branch raw URL. |
+| Post-install branch Skill overlay, including its branch constants, downloads, copy verification, legacy-file deletion, success message, and main-flow call | `static/install.sh` (`install_split_skill_test_docs`) | Remove the complete overlay function and its invocation. Let the signed production Skill bundle install and reconcile the four production Skills. | A normal production installation provides `ef-onboarding`, removes the obsolete managed `onboarding-v2.md`, and prints no branch-overlay message. |
+| Installer source-only test switch | `static/install.sh` (`EIGENFLUX_INSTALLER_TEST_MODE`) | Remove the early-return switch. Refactor any remaining Home-resolution test so production shell execution does not carry a test-only control path. | Repository-wide search finds no `EIGENFLUX_INSTALLER_TEST_MODE`. |
+| Tests written only for the temporary branch overlay | `tests/install/test_split_skill_overlay.py` | Delete the overlay download/copy tests. Preserve stable-Home coverage in the production Home-resolution tests and production Skill discovery/bundle tests. | No test references `TEST_BRANCH`, `TEST_DOC_BASE`, or `install_split_skill_test_docs`; production tests still cover four-Skill installation and Home selection. |
+| Branch-specific manual test instructions | This file | Delete this file after recording the final results, or rewrite it as a branch-neutral manual regression checklist if the workflow remains useful. | Shipped documentation contains no branch URL, staged checkpoint, or test-only expected output. |
+| Locally installed branch artifacts | Developer machine: installed `ef-*` files, test Agent Homes, test credentials, and test recurring tasks | Remove only known test identities and tasks, then reinstall the released bundle. Do not delete an established production Agent Home. | A fresh production run loads released Skills and has exactly one intended recurring task. |
+
+### Decide explicitly; do not remove as test scaffolding
+
+| Pending product decision | Current tested behavior | Merge decision required |
+|---|---|---|
+| Initial Feed and Attention baseline | Onboarding ends after the validated Console handoff; baseline Feed polling, Attention Prefill, and feedback are deferred. | Decide whether this remains the production boundary or whether a separately designed post-Console flow restores it. |
+| Manual path Agent Card | `仅设置定时检查` leaves all Agent Card fields empty and applies only system security defaults. | Decide whether safe host-derived defaults should be introduced later with matching consent language. |
+| Installation-to-consent narration | The Agent may currently print an installation verification summary before the consent question. | Decide whether the production install entry should require a silent transition directly to the consent prompt. |
+| Recurring task execution permissions | Creating and reading back a task does not itself prove that its later run can write the Agent Home and Skill lock or reach the network. | Add or perform one real scheduled-run verification before declaring the recurring connection complete. |
+
+### Preserve as production behavior
+
+- `skills/install.md` as the standalone detailed installation entry, after its
+  branch-only delivery text is removed.
+- `ef-onboarding` and its focused references, plus routing from sibling Skills.
+- Production discovery and signed-bundle inclusion of all four `ef-*` Skills;
+  `skills/install.md` remains outside the Skill bundle.
+- Current-host isolation, formal stable Agent Home resolution, and explicit
+  reuse of that Home across identity, scheduling, and provisioning.
+- One consent question whose two choices differ only in optional context-based
+  Prefill, unless a later product decision intentionally changes that contract.
+- Contract, Home-resolution, installer, API, and bundle tests that verify
+  production behavior rather than branch delivery.

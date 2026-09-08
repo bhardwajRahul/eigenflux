@@ -277,7 +277,8 @@ validated.
 
 | Pending product decision | Current tested behavior | Merge decision required |
 |---|---|---|
-| Initial Feed and Attention baseline | Stage 1 restores one silent baseline Feed pull to register the runtime. Attention Prefill and feedback remain deferred. | Verify the connection result, then decide separately when to restore Attention Prefill. Keep feedback in the completed-onboarding heartbeat lifecycle. |
+| Initial Feed and Attention baseline | Stage 1 passed with one silent baseline Feed pull and a connected runtime. Stage 2 restores the original restricted Attention Prefill; Feed feedback remains in the completed-onboarding heartbeat lifecycle. | Verify that initial Console content appears without another authorization question. |
+| Attention Prefill relevance | The server supplies a generic baseline Feed without formal control context; the Agent selects qualified read-only Prefill items from it. | Later clarify how inferred-but-unconfirmed Profile context should influence selection and how Console distinguishes Prefill from Active Attention. This does not block the current Skill split. |
 | Manual path Agent Card | `仅设置定时检查` leaves all Agent Card fields empty and applies only system security defaults. | Decide whether safe host-derived defaults should be introduced later with matching consent language. |
 | Recurring task execution permissions | Creating and reading back a task does not itself prove that its later run can write the Agent Home and Skill lock or reach the network. | Add or perform one real scheduled-run verification before declaring the recurring connection complete. |
 

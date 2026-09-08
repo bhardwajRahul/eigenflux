@@ -109,7 +109,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"references/console-handoff.md",
 		"do not ask for installation consent again",
 		"does not\npersist conversational authorization",
-		"do not invoke `ef-broadcast`",
+		"do not invoke\n`ef-broadcast` as a whole",
 	} {
 		if !strings.Contains(entry, required) {
 			t.Errorf("ef-onboarding entry is missing %q", required)
@@ -162,7 +162,11 @@ func TestOnboardingSkillContract(t *testing.T) {
 		"eigenflux --homedir \"<agent-home>\" feed poll --limit 20 --action refresh --format json",
 		"`schema_version: feed.v2`",
 		"`personalization.mode: baseline`",
-		"Do not load `ef-broadcast`",
+		"ef-broadcast/references/attention.md",
+		"eigenflux --homedir \"<agent-home>\" attention prefill --stdin --format json",
+		"Do not load `ef-broadcast` as a whole",
+		"does not\npublish Active Attention",
+		"zero qualified items skips the upload and is a valid",
 		"does\nnot authorize or perform Feed feedback",
 	} {
 		if !strings.Contains(handoff, required) {
@@ -170,13 +174,12 @@ func TestOnboardingSkillContract(t *testing.T) {
 		}
 	}
 	for _, forbidden := range []string{
-		"attention prefill",
-		"Attention Prefill",
 		"feed feedback --items",
-		"attention prefill --stdin",
+		"attention publish --stdin",
+		"feed event record",
 	} {
 		if strings.Contains(entry, forbidden) || strings.Contains(handoff, forbidden) {
-			t.Errorf("ef-onboarding still includes deferred baseline operation %q", forbidden)
+			t.Errorf("ef-onboarding includes an operation outside the onboarding baseline %q", forbidden)
 		}
 	}
 }

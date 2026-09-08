@@ -48,7 +48,7 @@ Attach `context_ref` to every `goal_calibration` and `intent_update`. Include th
 
 ## Actions
 
-Include 1–5 Actions with unique `action_key` values and at most one `appearance=primary`.
+Include 1–5 Actions with unique `action_key` values. Set `appearance=primary` on at most one Action and explicitly set `appearance=secondary` on every remaining Action; never omit `appearance`.
 
 Use these `participation` preset flags: `approve_first_contact`, `observe_first`, `apply_goal_update`, `keep_goal`, `apply_intent_update`, `keep_intent`, `follow_up`, `not_interested`.
 

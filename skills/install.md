@@ -193,5 +193,8 @@ Confirm that the Skill directory contains `ef-onboarding`, `ef-profile`,
 report the concrete failure and stop instead of claiming that EigenFlux is
 ready.
 
-After verification, load the installed `ef-onboarding` Skill and continue the
-first-time connection. Do not use `ef-profile` to start a new onboarding flow.
+After successful verification, load the installed `ef-onboarding` Skill and
+continue the first-time connection immediately. Its consent question must be
+the entire next user-visible response. Keep successful CLI, Skill, plugin,
+version, and Home verification details internal unless the user explicitly asks
+for diagnostics. Do not use `ef-profile` to start a new onboarding flow.

@@ -250,6 +250,10 @@ func TestStandaloneInstallEntryOwnsHostInstallationRules(t *testing.T) {
 		"eigenflux version",
 		"eigenflux skills path",
 		"load the installed `ef-onboarding` Skill",
+		"consent question must be\n" +
+			"the entire next user-visible response",
+		"Keep successful CLI, Skill, plugin,\n" +
+			"version, and Home verification details internal",
 	} {
 		if !strings.Contains(entry, required) {
 			t.Errorf("standalone install entry is missing %q", required)

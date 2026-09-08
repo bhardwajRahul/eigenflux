@@ -61,6 +61,9 @@ Expected evidence:
 - `ef-profile/references/onboarding-v2.md` is absent.
 - The Agent reloads the installed `ef-onboarding` Skill and does not run
   `eigenflux skills sync` again during the branch test.
+- Successful CLI, Skill, plugin, version, and Home verification stays internal;
+  the Agent does not add a separate installation-success summary before the
+  consent question.
 
 ### Checkpoint 3 — Ask one short Onboarding question
 
@@ -276,7 +279,6 @@ validated.
 |---|---|---|
 | Initial Feed and Attention baseline | Onboarding ends after the validated Console handoff; baseline Feed polling, Attention Prefill, and feedback are deferred. | Decide whether this remains the production boundary or whether a separately designed post-Console flow restores it. |
 | Manual path Agent Card | `仅设置定时检查` leaves all Agent Card fields empty and applies only system security defaults. | Decide whether safe host-derived defaults should be introduced later with matching consent language. |
-| Installation-to-consent narration | The Agent may currently print an installation verification summary before the consent question. | Decide whether the production install entry should require a silent transition directly to the consent prompt. |
 | Recurring task execution permissions | Creating and reading back a task does not itself prove that its later run can write the Agent Home and Skill lock or reach the network. | Add or perform one real scheduled-run verification before declaring the recurring connection complete. |
 
 ### Preserve as production behavior
@@ -290,5 +292,8 @@ validated.
   reuse of that Home across identity, scheduling, and provisioning.
 - One consent question whose two choices differ only in optional context-based
   Prefill, unless a later product decision intentionally changes that contract.
+- After successful installation verification, the consent question is the next
+  complete user-visible response; successful diagnostic details remain internal
+  unless the user requests them.
 - Contract, Home-resolution, installer, API, and bundle tests that verify
   production behavior rather than branch delivery.

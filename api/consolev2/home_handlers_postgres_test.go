@@ -203,6 +203,77 @@ func TestHomeHTTPContracts(t *testing.T) {
 		testConsoleCountrySources(t, db, svc, h, cookie, agentIDValue, demandAgentID, publishAgentID, firstVoiceItemID, newPublishItemID, now)
 	})
 
+	t.Run("activity eligibility applies to broadcasts and replies", func(t *testing.T) {
+		cases := []struct {
+			name     string
+			eligible interface{}
+			version  string
+			status   int
+			visible  bool
+		}{
+			{"current eligible", true, homepageEvaluationVersion, 3, true},
+			{"current ineligible", false, homepageEvaluationVersion, 3, false},
+			{"old evaluation", true, "homepage-v1", 3, false},
+			{"missing evaluation", true, "", 3, false},
+			{"missing eligibility", nil, homepageEvaluationVersion, 3, false},
+			{"discarded", true, homepageEvaluationVersion, 4, false},
+			{"retracted", true, homepageEvaluationVersion, 5, false},
+		}
+		for index, tc := range cases {
+			t.Run(tc.name, func(t *testing.T) {
+				tx := db.Begin()
+				if tx.Error != nil {
+					t.Fatal(tx.Error)
+				}
+				defer tx.Rollback()
+				originalDB := svc.db
+				svc.db = tx
+				defer func() { svc.db = originalDB }()
+				exec := func(query string, args ...interface{}) {
+					t.Helper()
+					if err := tx.Exec(query, args...).Error; err != nil {
+						t.Fatal(err)
+					}
+				}
+				itemID, convID, msgID := agentIDValue+1000+int64(index), agentIDValue+2000+int64(index), agentIDValue+3000+int64(index)
+				exec(`INSERT INTO raw_items (item_id, author_agent_id, raw_content, created_at)
+					VALUES (?, ?, 'activity eligibility contract', ?)`, itemID, agentIDValue, now)
+				exec(`INSERT INTO processed_items (item_id, status, summary, broadcast_type, quality_score, lang, updated_at,
+					homepage_eligible, homepage_evaluation_version, homepage_real_world_relevant)
+					VALUES (?, ?, 'activity eligibility contract', 'info', 0.9, 'en', ?, ?, ?, FALSE)`,
+					itemID, tc.status, now, tc.eligible, tc.version)
+				exec(`INSERT INTO conversations (conv_id, participant_a, participant_b, initiator_id, last_sender_id,
+					origin_type, origin_id, updated_at) VALUES (?, ?, ?, ?, ?, 'broadcast', ?, ?)`,
+					convID, agentIDValue, demandAgentID, demandAgentID, demandAgentID, itemID, now)
+				exec(`INSERT INTO private_messages (msg_id, conv_id, sender_id, receiver_id, content, created_at)
+					VALUES (?, ?, ?, ?, 'reply content must stay private', ?)`, msgID, convID, demandAgentID, agentIDValue, now)
+
+				activity, err := svc.loadHomeActivity(context.Background(), now)
+				if err != nil {
+					t.Fatal(err)
+				}
+				seen := map[string]bool{}
+				for _, event := range activity.Events {
+					if event.BroadcastID != strconv.FormatInt(itemID, 10) {
+						continue
+					}
+					seen[event.ID] = true
+					if !tc.visible {
+						t.Fatalf("ineligible broadcast exposed through %s: %#v", event.Type, event)
+					}
+					if event.BroadcastContent != "activity eligibility contract" {
+						t.Fatalf("unexpected public broadcast content: %#v", event)
+					}
+				}
+				for _, eventID := range []string{"broadcast:" + strconv.FormatInt(itemID, 10), "reply:" + strconv.FormatInt(msgID, 10)} {
+					if seen[eventID] != tc.visible {
+						t.Errorf("event %s visible=%v, want %v", eventID, seen[eventID], tc.visible)
+					}
+				}
+			})
+		}
+	})
+
 	generatedAt := time.Now().UnixMilli()
 	dayStart := homeDiscoveryDayStart(time.Now(), time.UTC)
 	discoveryCached := homeDiscoveryResponse{

@@ -47,8 +47,8 @@ func TestInstallAttributionFlow(t *testing.T) {
 		t.Fatalf("/r/<ref> bootstrap missing ref or --ref instruction: %.120s", doc)
 	}
 	for _, required := range []string{
-		"Mandatory Join Route",
-		"references/onboarding-v2.md",
+		"newly installed `ef-onboarding` Skill",
+		"follow its required flow",
 		"eigenflux agent provision --help",
 		"Every Console handoff starts at Step 1",
 	} {
@@ -60,6 +60,7 @@ func TestInstallAttributionFlow(t *testing.T) {
 		"eigenflux auth login --email",
 		"Ask which email to use",
 		"email OTP login",
+		"references/onboarding-v2.md",
 	} {
 		if strings.Contains(doc, forbidden) {
 			t.Errorf("/r/<ref> bootstrap still contains legacy authentication text %q", forbidden)

@@ -76,6 +76,7 @@ func TestAttentionSkillConsumesHumanResponsesBeforeFeed(t *testing.T) {
 		"one-hour scheduled cycle is a cadence recommendation, not an admission rule",
 		"20 total items, 4 `participation` items, and 16 `focus` items per Agent per rolling 60 minutes",
 		"top-level `retry_after_seconds`",
+		"explicitly set `appearance=secondary` on every remaining Action; never omit `appearance`",
 		"Claim at most 20 `attention_response` commands",
 		"stop new claims after 60 seconds",
 		"limits stop new claims only; finish the current claim before Feed",

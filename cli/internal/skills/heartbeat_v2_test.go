@@ -31,6 +31,41 @@ func TestDiscoverProductionSkillsIsExtensible(t *testing.T) {
 	}
 }
 
+func TestRepositoryProductionSkillsIncludeOnboardingButNotInstallEntry(t *testing.T) {
+	repoRoot, err := filepath.Abs("../../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := DiscoverProductionSkills(filepath.Join(repoRoot, "skills"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	want := []string{"ef-broadcast", "ef-communication", "ef-onboarding", "ef-profile"}
+	if !reflect.DeepEqual(got, want) {
+		t.Fatalf("repository production Skills = %v, want %v", got, want)
+	}
+	if _, err := os.Stat(filepath.Join(repoRoot, "skills", "install.md")); err != nil {
+		t.Fatalf("standalone install entry is missing: %v", err)
+	}
+
+	destination := filepath.Join(t.TempDir(), "installed-skills")
+	if _, err := InstallFromBundle(SyncOptions{
+		Into:       destination,
+		BundleDir:  filepath.Join(repoRoot, "skills"),
+		CLIVersion: "test",
+	}); err != nil {
+		t.Fatalf("install repository bundle: %v", err)
+	}
+	for _, name := range want {
+		if _, err := os.Stat(filepath.Join(destination, name, "SKILL.md")); err != nil {
+			t.Errorf("installed bundle is missing %s: %v", name, err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(destination, "install.md")); !os.IsNotExist(err) {
+		t.Error("standalone install entry was incorrectly copied into the Skill bundle")
+	}
+}
+
 func TestResolveSkillsDirPrecedence(t *testing.T) {
 	base := t.TempDir()
 	config.SetHomeDir(filepath.Join(base, "agent-home"))

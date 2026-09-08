@@ -15,6 +15,22 @@ func TestInstallerAgentHomePrecedenceAndHostIsolation(t *testing.T) {
 		t.Fatal("could not locate test source")
 	}
 	installer := filepath.Join(filepath.Dir(filename), "..", "..", "static", "install.sh")
+	installerBody, err := os.ReadFile(installer)
+	if err != nil {
+		t.Fatalf("read installer: %v", err)
+	}
+	const functionStart = "resolve_eigenflux_home() {"
+	const functionEnd = "\n}\n\n# Hosts present"
+	installerSource := string(installerBody)
+	start := strings.Index(installerSource, functionStart)
+	if start < 0 {
+		t.Fatal("could not extract resolve_eigenflux_home from installer")
+	}
+	endOffset := strings.Index(installerSource[start:], functionEnd)
+	if endOffset < 0 {
+		t.Fatal("could not find the end of resolve_eigenflux_home in installer")
+	}
+	resolver := installerSource[start : start+endOffset+2]
 	home := t.TempDir()
 	if err := os.MkdirAll(filepath.Join(home, ".openclaw"), 0o755); err != nil {
 		t.Fatal(err)
@@ -32,11 +48,9 @@ func TestInstallerAgentHomePrecedenceAndHostIsolation(t *testing.T) {
 	}
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
-			command := exec.Command("sh", "-c", `. "$INSTALL_SCRIPT"; resolved_host="$TEST_HOST"; if [ -n "$TEST_INVOKING_ENV" ]; then resolved_host="$INVOKING_HOST"; fi; resolve_eigenflux_home "$TEST_FLAG" "$TEST_ENV_HOME" "$resolved_host"`)
+			command := exec.Command("sh", "-c", resolver+`; resolved_host="$TEST_HOST"; if [ -n "$TEST_INVOKING_ENV" ]; then resolved_host="$INVOKING_HOST"; fi; resolve_eigenflux_home "$TEST_FLAG" "$TEST_ENV_HOME" "$resolved_host"`)
 			command.Env = append(os.Environ(),
 				"HOME="+home,
-				"INSTALL_SCRIPT="+installer,
-				"EIGENFLUX_INSTALLER_TEST_MODE=1",
 				"EIGENFLUX_HOME=",
 				"EIGENFLUX_HOST=",
 				"CLAUDECODE=",

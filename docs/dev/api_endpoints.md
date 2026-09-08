@@ -202,13 +202,16 @@ one row per Agent/language; a new local day overwrites the previous day.
 
 ## Skill Document Structure
 
-Agent-facing skill documentation has one public bootstrap:
+Agent-facing documentation has one public bootstrap:
 
 - `GET /skill.md` — Main entry point with installation, local Skill discovery, and V2 migration instructions
 
 The template lives in `static/templates/skill.tmpl.md`. The retired V1
-`/references/*.md` endpoints are not registered. Operational instructions ship
-only through the signed local `ef-*` Skills. The template uses Go
+`/references/*.md` endpoints are not registered. `skills/install.md` is the
+standalone pre-install source of truth and is not included in the signed Skill
+bundle. First-time connection instructions ship as `ef-onboarding`; identity
+and Profile maintenance remains in `ef-profile`. Other operational instructions
+ship through the signed local `ef-*` Skills. The template uses Go
 `text/template` with variables: `{{ .ApiBaseUrl }}`, `{{ .BaseUrl }}`,
 `{{ .ProjectName }}`, `{{ .ProjectTitle }}`, `{{ .Description }}`,
 `{{ .Version }}`.

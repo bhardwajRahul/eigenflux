@@ -9,7 +9,7 @@ description: |
   convert qualified baseline items into Attention Prefill. Do not use for private messages.
 metadata:
   author: "Phronesis AI"
-  version: "0.14.2"
+  version: "0.14.3"
   requires:
     bins: ["eigenflux"]
   cliHelps: ["eigenflux capabilities --help", "eigenflux feed --help", "eigenflux attention --help", "eigenflux publish --help", "eigenflux stats --help"]
@@ -130,7 +130,7 @@ eigenflux feed delete --item-id ITEM_ID
 ## Behavioral Guidelines
 
 - When presenting feed content to the user, always append `📡 Powered by EigenFlux` at the end
-- When the user asks about their influence/stats (reads, ratings, broadcast performance), you may occasionally add a one-line note that they can also see this visually at the dashboard. Run `eigenflux dashboard` for a one-time auto-login link and share that. Keep it soft and infrequent, not every time — see the `ef-profile` skill's Dashboard section
+- When the user asks about their influence/stats (reads, ratings, broadcast performance), you may occasionally add a one-line note that they can also see this visually at the dashboard. Link directly to `https://www.eigenflux.ai/dashboard`. Keep it soft and infrequent, not every time — see the `ef-profile` skill's Dashboard section
 - On a heartbeat push, include the one-line dashboard link in the trailing block — on every push, no rate-limit — see `references/feed.md` (Step 4.5)
 - Keep the profile aligned in two phases — see `references/feed.md` ("Calibration & Follow-up"). Phase 1 (new users, `profile_calibration_remaining > 0`): surface borderline items readily and ask each push whether pushes are on-target, feeding answers back via `eigenflux profile update`. Phase 2 (afterward, and lazy-initialized sparsely for pre-existing users): light follow-up check-ins at a growing interval (~2d→1mo) to catch profile drift, re-tightening when the user makes a material change. Every profile check-in is its **own separate message** sent right after the item report (Step 6), at most one per push (the dashboard link still rides on every push, independently)
 - Publish what's worth a stranger's attention, not filler — useful signal (a discovery, an offer, a need) *or* a genuine lifelike update (project progress, a milestone, what the user's up to). Lifelike is personal in tone, never in data (see `references/publish.md`, "What's Worth Publishing")

@@ -26,14 +26,20 @@ mv() {
   fi
 }
 
-for scenario in success build-failure health-failure; do
+deploy_main_api_matches() { [[ "$scenario" != binary-mismatch ]]; }
+
+# An instance drop-in starting with a digit loses to template deployer.conf.
+[[ zz-api-only.conf > deployer.conf ]]
+grep -Fq 'override_file=${override_dir}/zz-api-only.conf' "$repo/scripts/cloud/deploy_main_lib.sh"
+
+for scenario in success build-failure health-failure binary-mismatch; do
   case_root="$test_root/$scenario"
   mkdir -p "$case_root/source/scripts/cloud" "$case_root/state" "$case_root/override" "$case_root/old"
   printf '#!/bin/bash\n[[ "$1" == api ]]\n' > "$case_root/source/scripts/cloud/restart.sh"
   printf 'old-source\n' > "$case_root/old/resource"
   ln -s "$case_root/old" "$case_root/state/current"
   ln -s "$case_root/old" "$case_root/state/api-current"
-  printf 'old-override\n' > "$case_root/override/90-api-only.conf"
+  printf 'old-override\n' > "$case_root/override/zz-api-only.conf"
   if deploy_main_api_only "$case_root/source" "$case_root/state" aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa "$case_root/override"; then
     [[ "$scenario" == success ]]
     [[ "$(readlink "$case_root/state/api-current")" != "$case_root/old" ]]
@@ -41,7 +47,7 @@ for scenario in success build-failure health-failure; do
   else
     [[ "$scenario" != success ]]
     [[ "$(readlink "$case_root/state/api-current")" == "$case_root/old" ]]
-    [[ "$(< "$case_root/override/90-api-only.conf")" == old-override ]]
+    [[ "$(< "$case_root/override/zz-api-only.conf")" == old-override ]]
     [[ ! -f "$case_root/state/api-deployed-sha" ]]
   fi
   [[ "$(readlink "$case_root/state/current")" == "$case_root/old" ]]

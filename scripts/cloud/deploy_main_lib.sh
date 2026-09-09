@@ -219,10 +219,19 @@ deploy_main_prepare_source() {
 
 # API releases have their own source and pointer: changing the shared current
 # bundle would also change relative resources for still-running RPC services.
+deploy_main_api_matches() {
+  local pid
+  pid="$(systemctl show eigenflux-app@api -p MainPID --value)" || return 1
+  [[ "${pid}" =~ ^[1-9][0-9]*$ ]] || return 1
+  cmp -s "/proc/${pid}/exe" "$1/bin/api"
+}
+
 deploy_main_api_only() {
   local source_dir=$1 state_dir=$2 target=$3
   local override_dir=${4:-/etc/systemd/system/eigenflux-app@api.service.d}
-  local override_file=${override_dir}/90-api-only.conf
+  # systemd sorts template and instance drop-ins together by filename.
+  # This must sort after the shared deployer.conf.
+  local override_file=${override_dir}/zz-api-only.conf
   local release_dir old_link="" had_override=0
   mkdir -p "${state_dir}/api-releases" || return 1
   release_dir="$(mktemp -d "${state_dir}/api-releases/${target}.XXXXXX")" || return 1
@@ -253,7 +262,8 @@ deploy_main_api_only() {
     systemctl daemon-reload &&
     bash "${release_dir}/source/scripts/cloud/restart.sh" api &&
     curl --retry 15 --retry-delay 1 --retry-connrefused --max-time 3 -fsS \
-      http://127.0.0.1:8080/api/v1/website/stats >/dev/null; then
+      http://127.0.0.1:8080/api/v1/website/stats >/dev/null &&
+    deploy_main_api_matches "${release_dir}"; then
     printf '%s\n' "${target}" > "${state_dir}/api-deployed-sha"
     echo "API-only deployment completed: ${target}; other services and migrations unchanged"
     return 0

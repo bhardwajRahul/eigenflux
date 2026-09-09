@@ -48,6 +48,9 @@ a root operator may install the main-merged `deploy_main_lib.sh` and
 API. It uses the same deployment lock, fixed official remote, clean-checkout
 gate and root-managed environment. No migration or other service restart runs.
 API has a separate root-owned release/source pointer and per-instance override;
+the override is named `zz-api-only.conf` so it loads after the template's
+`deployer.conf`. Successful health checks must also match the running
+`/proc/<MainPID>/exe` against the target API binary before recording success.
 health-check failure restores the previous override and API release. The old
 release is retained. A later full deployment advances both release pointers.
 Do not run the full installer for this update: it bootstraps every service and

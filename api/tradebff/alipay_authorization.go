@@ -241,6 +241,9 @@ func (s *AlipayAuthorization) Callback(ctx context.Context, c *app.RequestContex
 	a.Status = "rejected"
 	code := c.Query("auth_code")
 	if code != "" && len(code) <= 512 && c.Query("error") == "" {
+		// Service/configuration errors are not evidence of account rejection.
+		// Only a documented verification denial may be classified as rejected.
+		a.Status = "failed"
 		body, _ := json.Marshal(map[string]string{"authorization": code})
 		result, err := s.trade.fetch(ctx, a.AgentID, "payout:bind", "wallet.authorization.verify", http.MethodPost, "/api/v1/wallet/alipay/authorization/verify", nil, body, "verify-"+id[:48], true)
 		if err == nil {
@@ -251,6 +254,11 @@ func (s *AlipayAuthorization) Callback(ctx context.Context, c *app.RequestContex
 				a.Status = "authorized"
 				a.Code = code
 				a.MaskedDisplay = preview.MaskedDisplay
+			}
+		} else {
+			var upstream *UpstreamError
+			if errors.As(err, &upstream) && upstream.Status == http.StatusBadRequest && upstream.ErrorCode == "PAYMENT_INVALID_ARGUMENT" {
+				a.Status = "rejected"
 			}
 		}
 	}

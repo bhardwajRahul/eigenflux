@@ -20,15 +20,17 @@ type CommissionClient struct {
 }
 
 type commissionEnvelope struct {
-	Code int             `json:"code"`
-	Msg  string          `json:"msg"`
-	Data json.RawMessage `json:"data"`
+	Code      int             `json:"code"`
+	ErrorCode string          `json:"error_code"`
+	Msg       string          `json:"msg"`
+	Data      json.RawMessage `json:"data"`
 }
 
 type UpstreamError struct {
-	Status int
-	Code   int
-	Msg    string
+	Status    int
+	Code      int
+	Msg       string
+	ErrorCode string
 }
 
 func (e *UpstreamError) Error() string { return "Commission request failed" }
@@ -82,7 +84,7 @@ func (c *CommissionClient) Do(ctx context.Context, token, method, path string, q
 		if status < 400 || status > 599 {
 			status = http.StatusBadGateway
 		}
-		return nil, &UpstreamError{Status: status, Code: envelope.Code, Msg: envelope.Msg}
+		return nil, &UpstreamError{Status: status, Code: envelope.Code, Msg: envelope.Msg, ErrorCode: envelope.ErrorCode}
 	}
 	if len(envelope.Data) == 0 || string(envelope.Data) == "null" {
 		return json.RawMessage(`{}`), nil

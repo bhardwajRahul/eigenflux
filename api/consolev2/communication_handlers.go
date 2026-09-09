@@ -76,6 +76,24 @@ type conversationCursor struct {
 	TopicStatus int16 `json:"t"`
 }
 
+type communicationSearchCursor struct {
+	Rank      int   `json:"r"`
+	MatchedAt int64 `json:"m"`
+	ConvID    int64 `json:"c"`
+}
+
+type communicationSearchResult struct {
+	communicationConversation
+	MatchedBy      string `gorm:"column:matched_by" json:"matched_by"`
+	Remark         string `gorm:"column:remark" json:"remark,omitempty"`
+	MatchedMsgID   int64  `gorm:"column:matched_message_id" json:"matched_message_id,string"`
+	MatchedSender  int64  `gorm:"column:matched_sender_id" json:"matched_sender_id,string"`
+	MatchedPreview string `gorm:"column:matched_message_preview" json:"matched_message_preview"`
+	MatchedAt      int64  `gorm:"column:matched_at" json:"matched_at"`
+	MatchCount     int64  `gorm:"column:match_count" json:"match_count"`
+	MatchRank      int    `gorm:"column:match_rank" json:"-"`
+}
+
 func parseCommunicationLimit(c *app.RequestContext) (int, error) {
 	raw := c.Query("limit")
 	if raw == "" {
@@ -104,6 +122,26 @@ func decodeConversationCursor(raw string) (conversationCursor, error) {
 	var value conversationCursor
 	if json.Unmarshal(decoded, &value) != nil || value.UpdatedAt <= 0 || value.ConvID <= 0 {
 		return conversationCursor{}, errors.New("invalid cursor")
+	}
+	return value, nil
+}
+
+func encodeCommunicationSearchCursor(value communicationSearchCursor) string {
+	raw, _ := json.Marshal(value)
+	return base64.RawURLEncoding.EncodeToString(raw)
+}
+
+func decodeCommunicationSearchCursor(raw string) (communicationSearchCursor, error) {
+	if raw == "" {
+		return communicationSearchCursor{}, nil
+	}
+	decoded, err := base64.RawURLEncoding.DecodeString(raw)
+	if err != nil {
+		return communicationSearchCursor{}, errors.New("invalid cursor")
+	}
+	var value communicationSearchCursor
+	if json.Unmarshal(decoded, &value) != nil || value.Rank < 0 || value.Rank > 4 || value.MatchedAt <= 0 || value.ConvID <= 0 {
+		return communicationSearchCursor{}, errors.New("invalid cursor")
 	}
 	return value, nil
 }
@@ -507,6 +545,146 @@ func (s *Service) loadViewerRelations(viewerID int64, peerIDs []int64) (map[int6
 	return result, nil
 }
 
+func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestContext) {
+	viewerID, _ := agentID(c)
+	limit, err := parseCommunicationLimit(c)
+	if err != nil {
+		fail(c, http.StatusBadRequest, "INVALID_LIMIT", err.Error(), nil)
+		return
+	}
+	queryText := strings.Join(strings.Fields(strings.TrimSpace(c.Query("q"))), " ")
+	if utf8.RuneCountInString(queryText) < 2 || utf8.RuneCountInString(queryText) > 100 {
+		fail(c, http.StatusBadRequest, "INVALID_QUERY", "q must contain between 2 and 100 characters", nil)
+		return
+	}
+	cursor, err := decodeCommunicationSearchCursor(c.Query("cursor"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
+		return
+	}
+	pattern := "%" + queryText + "%"
+	prefix := queryText + "%"
+	cursorFilter := ""
+	cursorArgs := []interface{}{}
+	if cursor.MatchedAt > 0 {
+		cursorFilter = `WHERE match_rank > ? OR (match_rank = ? AND (matched_at, conv_id) < (?, ?))`
+		cursorArgs = append(cursorArgs, cursor.Rank, cursor.Rank, cursor.MatchedAt, cursor.ConvID)
+	}
+	sql := `WITH eligible AS (
+		SELECT c.*, CASE WHEN c.participant_a = ? THEN c.participant_b ELSE c.participant_a END AS peer_agent_id
+		FROM conversations c
+		WHERE c.status = 0 AND c.msg_count >= 1 AND (c.participant_a = ? OR c.participant_b = ?)
+	), candidates AS (
+		SELECT e.conv_id, e.participant_a, e.participant_b, COALESCE(e.origin_type, '') AS origin_type,
+			COALESCE(e.origin_id, 0) AS origin_id, e.msg_count, e.updated_at,
+			CASE e.topic_status WHEN 0 THEN 'pending_verify' WHEN 2 THEN 'closed' ELSE 'open' END AS topic_status,
+			e.peer_agent_id,
+			CASE WHEN lower(COALESCE(a.agent_name, '')) = lower(?) OR lower(COALESCE(a.agent_name_en, '')) = lower(?) OR lower(COALESCE(a.short_id, '')) = lower(?) THEN 0
+				 WHEN COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ? OR COALESCE(a.short_id, '') ILIKE ? THEN 1
+				 WHEN COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ? OR COALESCE(a.short_id, '') ILIKE ? THEN 2
+				 WHEN COALESCE(ur.remark, '') ILIKE ? THEN 3 ELSE 4 END AS match_rank,
+			CASE WHEN COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ? OR COALESCE(a.short_id, '') ILIKE ? THEN 'agent_name'
+				 WHEN COALESCE(ur.remark, '') ILIKE ? THEN 'remark' ELSE 'message' END AS matched_by,
+			COALESCE(ur.remark, '') AS remark,
+			COALESCE(mm.msg_id, lm.msg_id) AS matched_message_id,
+			COALESCE(mm.sender_id, lm.sender_id) AS matched_sender_id,
+			COALESCE(mm.content, lm.content, '') AS matched_message_preview,
+			COALESCE(mm.created_at, lm.created_at, e.updated_at) AS matched_at,
+			CASE WHEN mm.msg_id IS NOT NULL THEN mm.match_count ELSE 0 END AS match_count
+		FROM eligible e
+		LEFT JOIN agents a ON a.agent_id = e.peer_agent_id
+		LEFT JOIN user_relations ur ON ur.from_uid = ? AND ur.to_uid = e.peer_agent_id AND ur.rel_type = 1
+		LEFT JOIN LATERAL (
+			SELECT pm.msg_id, pm.sender_id, pm.content, pm.created_at, COUNT(*) OVER () AS match_count
+			FROM private_messages pm WHERE pm.conv_id = e.conv_id AND pm.content ILIKE ?
+			ORDER BY pm.msg_id DESC LIMIT 1
+		) mm ON TRUE
+		LEFT JOIN LATERAL (
+			SELECT pm.msg_id, pm.sender_id, pm.content, pm.created_at FROM private_messages pm
+			WHERE pm.conv_id = e.conv_id ORDER BY pm.msg_id DESC LIMIT 1
+		) lm ON TRUE
+		WHERE COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ?
+			OR COALESCE(a.short_id, '') ILIKE ? OR COALESCE(ur.remark, '') ILIKE ? OR mm.msg_id IS NOT NULL
+	)
+	SELECT * FROM candidates ` + cursorFilter + `
+	ORDER BY match_rank ASC, matched_at DESC, conv_id DESC LIMIT ?`
+	args := []interface{}{viewerID, viewerID, viewerID,
+		queryText, queryText, queryText,
+		prefix, prefix, prefix,
+		pattern, pattern, pattern,
+		pattern,
+		pattern, pattern, pattern,
+		pattern,
+		viewerID,
+		pattern,
+		pattern, pattern, pattern, pattern}
+	args = append(args, cursorArgs...)
+	args = append(args, limit+1)
+	var rows []communicationSearchResult
+	if err := s.db.Raw(sql, args...).Scan(&rows).Error; err != nil {
+		fail(c, http.StatusInternalServerError, "MESSAGE_SEARCH_FAILED", "could not search messages", nil)
+		return
+	}
+	hasMore := len(rows) > limit
+	if hasMore {
+		rows = rows[:limit]
+	}
+	peerIDs := make([]int64, 0, len(rows))
+	convIDs := make([]int64, 0, len(rows))
+	for index := range rows {
+		peerIDs = append(peerIDs, rows[index].PeerAgentID)
+		convIDs = append(convIDs, rows[index].ConvID)
+		rows[index].MatchedPreview, _ = truncateRunes(rows[index].MatchedPreview, 1000)
+	}
+	if len(convIDs) > 0 {
+		var unreadRows []struct {
+			ConvID int64 `gorm:"column:conv_id"`
+			Count  int64 `gorm:"column:count"`
+		}
+		if err := s.db.Raw(`SELECT conv_id, COUNT(*) AS count FROM private_messages
+			WHERE conv_id = ANY(?) AND receiver_id = ? AND is_read = false GROUP BY conv_id`, pq.Array(convIDs), viewerID).Scan(&unreadRows).Error; err != nil {
+			fail(c, http.StatusInternalServerError, "MESSAGE_SEARCH_FAILED", "could not read unread counts", nil)
+			return
+		}
+		unreadByConversation := make(map[int64]int64, len(unreadRows))
+		for _, row := range unreadRows {
+			unreadByConversation[row.ConvID] = row.Count
+		}
+		for index := range rows {
+			rows[index].UnreadCount = unreadByConversation[rows[index].ConvID]
+		}
+	}
+	relations, err := s.loadViewerRelations(viewerID, peerIDs)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "MESSAGE_SEARCH_FAILED", "could not read relationship state", nil)
+		return
+	}
+	contexts, err := s.loadCommunicationContexts(viewerID, peerIDs, relations)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "IDENTITY_READ_FAILED", "could not resolve Agent identities", nil)
+		return
+	}
+	for index := range rows {
+		switch {
+		case rows[index].OriginType == "friend":
+			rows[index].Category = "friend"
+		case relations[rows[index].PeerAgentID] == "friend":
+			rows[index].Category = "broadcast_comment"
+		default:
+			rows[index].Category = "non_friend"
+		}
+	}
+	nextCursor := ""
+	if hasMore && len(rows) > 0 {
+		last := rows[len(rows)-1]
+		nextCursor = encodeCommunicationSearchCursor(communicationSearchCursor{Rank: last.MatchRank, MatchedAt: last.MatchedAt, ConvID: last.ConvID})
+	}
+	reply(c, http.StatusOK, map[string]interface{}{
+		"viewer_agent_id": strconv.FormatInt(viewerID, 10), "results": rows,
+		"agent_contexts": contexts, "next_cursor": nextCursor, "has_more": hasMore,
+	})
+}
+
 func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestContext) {
 	viewerID, _ := agentID(c)
 	limit, err := parseCommunicationLimit(c)
@@ -524,6 +702,11 @@ func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestCon
 		fail(c, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
+	anchor, err := parseIDCursor(c.Query("anchor_message_id"))
+	if err != nil {
+		fail(c, http.StatusBadRequest, "INVALID_ANCHOR", err.Error(), nil)
+		return
+	}
 	var conversation communicationConversation
 	if err := s.db.Raw(`SELECT conv_id, participant_a, participant_b, COALESCE(origin_type, '') AS origin_type, updated_at
 		FROM conversations WHERE conv_id = ? AND status = 0 AND (participant_a = ? OR participant_b = ?)`,
@@ -535,9 +718,25 @@ func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestCon
 	if peerID == viewerID {
 		peerID = conversation.ParticipantB
 	}
-	query := s.db.Raw(`SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
+	messageSQL := `SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
 		FROM private_messages WHERE conv_id = ? AND (? = 0 OR msg_id < ?)
-		ORDER BY msg_id DESC LIMIT ?`, convID, cursor, cursor, limit+1)
+		ORDER BY msg_id DESC LIMIT ?`
+	messageArgs := []interface{}{convID, cursor, cursor, limit + 1}
+	if anchor > 0 && cursor == 0 {
+		olderLimit := (limit+1)/2 + 1
+		newerLimit := limit + 1 - olderLimit
+		messageSQL = `SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at FROM (
+			SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
+			FROM private_messages WHERE conv_id = ? AND msg_id <= ? ORDER BY msg_id DESC LIMIT ?
+		) older
+		UNION ALL
+		SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at FROM (
+			SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
+			FROM private_messages WHERE conv_id = ? AND msg_id > ? ORDER BY msg_id ASC LIMIT ?
+		) newer ORDER BY msg_id DESC`
+		messageArgs = []interface{}{convID, anchor, olderLimit, convID, anchor, newerLimit}
+	}
+	query := s.db.Raw(messageSQL, messageArgs...)
 	var messages []communicationMessage
 	if err := query.Scan(&messages).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "MESSAGES_READ_FAILED", "could not read messages", nil)

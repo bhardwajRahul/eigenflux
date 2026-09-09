@@ -1301,6 +1301,7 @@ func testCommunicationProjection(t *testing.T, gdb *gorm.DB, h *server.Hertz, id
 	unbrokenMsgID, _ := idgen.NextID()
 	requestID, _ := idgen.NextID()
 	foreignConvID, _ := idgen.NextID()
+	foreignMsgID, _ := idgen.NextID()
 	publicCard := `{"agent_description":"Public Agent description","human_description":"Public human description","working_languages":["zh","en"],"seeking":["signals"],"offering":["analysis"]}`
 	privateCard := `{"current_focus":["PRIVATE_FOCUS_MUST_NOT_LEAK"],"human_status":["PRIVATE_STATUS_MUST_NOT_LEAK"]}`
 	if err := gdb.Exec(`INSERT INTO agents (agent_id, short_id, email, agent_name, bio, created_at, updated_at, is_official)
@@ -1317,14 +1318,14 @@ func testCommunicationProjection(t *testing.T, gdb *gorm.DB, h *server.Hertz, id
 		t.Fatal(err)
 	}
 	if err := gdb.Exec(`INSERT INTO user_relations (from_uid, to_uid, rel_type, remark, created_at)
-		VALUES (?, ?, 1, 'viewer-only remark', ?), (?, ?, 1, '', ?)`, viewerID, peerID, now, peerID, viewerID, now).Error; err != nil {
+		VALUES (?, ?, 1, 'viewer-only remark', ?), (?, ?, 1, 'peer-only private remark', ?)`, viewerID, peerID, now, peerID, viewerID, now).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := gdb.Exec(`INSERT INTO conversations
 		(conv_id, participant_a, participant_b, initiator_id, last_sender_id, origin_type, msg_count, status, updated_at)
 		VALUES (?, ?, ?, ?, ?, 'friend', 1, 0, ?),
 		       (?, ?, ?, ?, ?, 'broadcast', 1, 0, ?),
-		       (?, ?, ?, ?, ?, 'broadcast', 0, 0, ?)`,
+		       (?, ?, ?, ?, ?, 'broadcast', 1, 0, ?)`,
 		convID, viewerID, peerID, viewerID, peerID, now,
 		unbrokenConvID, viewerID, requestPeerID, requestPeerID, requestPeerID, now,
 		foreignConvID, peerID, requestPeerID, peerID, requestPeerID, now).Error; err != nil {
@@ -1333,9 +1334,11 @@ func testCommunicationProjection(t *testing.T, gdb *gorm.DB, h *server.Hertz, id
 	if err := gdb.Exec(`INSERT INTO private_messages
 		(msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at)
 		VALUES (?, ?, ?, ?, 'hello from peer', false, ?),
-		       (?, ?, ?, ?, 'cold inbound message', false, ?)`,
+		       (?, ?, ?, ?, 'cold inbound message', false, ?),
+		       (?, ?, ?, ?, 'foreign-only secret', false, ?)`,
 		msgID, convID, peerID, viewerID, now,
-		unbrokenMsgID, unbrokenConvID, requestPeerID, viewerID, now).Error; err != nil {
+		unbrokenMsgID, unbrokenConvID, requestPeerID, viewerID, now,
+		foreignMsgID, foreignConvID, peerID, requestPeerID, now).Error; err != nil {
 		t.Fatal(err)
 	}
 	if err := gdb.Exec(`INSERT INTO friend_requests
@@ -1375,6 +1378,37 @@ func testCommunicationProjection(t *testing.T, gdb *gorm.DB, h *server.Hertz, id
 	conversations := responseData(t, conversationsPayload)["conversations"].([]interface{})
 	if len(conversations) != 2 || conversations[0].(map[string]interface{})["last_message"] == nil {
 		t.Fatalf("conversation batch enrichment mismatch: %#v", conversations)
+	}
+	status, searchPayload, _ := performJSON(t, h, "GET", "/api/v2/console/pm/search?q=Official%20Peer", map[string]interface{}{},
+		ut.Header{Key: "Cookie", Value: cookieHeader})
+	if status != 200 {
+		t.Fatalf("message search status=%d payload=%#v", status, searchPayload)
+	}
+	searchResults := responseData(t, searchPayload)["results"].([]interface{})
+	if len(searchResults) != 1 || searchResults[0].(map[string]interface{})["conv_id"] != strconv.FormatInt(convID, 10) || searchResults[0].(map[string]interface{})["matched_by"] != "agent_name" {
+		t.Fatalf("Agent-name search mismatch: %#v", searchResults)
+	}
+	status, searchPayload, _ = performJSON(t, h, "GET", "/api/v2/console/pm/search?q=viewer-only%20remark", map[string]interface{}{},
+		ut.Header{Key: "Cookie", Value: cookieHeader})
+	searchResults = responseData(t, searchPayload)["results"].([]interface{})
+	if status != 200 || len(searchResults) != 1 || searchResults[0].(map[string]interface{})["conv_id"] != strconv.FormatInt(convID, 10) || searchResults[0].(map[string]interface{})["matched_by"] != "remark" || searchResults[0].(map[string]interface{})["remark"] != "viewer-only remark" {
+		t.Fatalf("viewer remark search mismatch: status=%d results=%#v", status, searchResults)
+	}
+	status, searchPayload, _ = performJSON(t, h, "GET", "/api/v2/console/pm/search?q=peer-only%20private", map[string]interface{}{},
+		ut.Header{Key: "Cookie", Value: cookieHeader})
+	if status != 200 || len(responseData(t, searchPayload)["results"].([]interface{})) != 0 {
+		t.Fatalf("counterparty remark leaked through search: status=%d payload=%#v", status, searchPayload)
+	}
+	status, searchPayload, _ = performJSON(t, h, "GET", "/api/v2/console/pm/search?q=cold%20inbound", map[string]interface{}{},
+		ut.Header{Key: "Cookie", Value: cookieHeader})
+	searchResults = responseData(t, searchPayload)["results"].([]interface{})
+	if status != 200 || len(searchResults) != 1 || searchResults[0].(map[string]interface{})["conv_id"] != strconv.FormatInt(unbrokenConvID, 10) || searchResults[0].(map[string]interface{})["matched_by"] != "message" {
+		t.Fatalf("cross-category message search mismatch: status=%d results=%#v", status, searchResults)
+	}
+	status, searchPayload, _ = performJSON(t, h, "GET", "/api/v2/console/pm/search?q=foreign-only", map[string]interface{}{},
+		ut.Header{Key: "Cookie", Value: cookieHeader})
+	if status != 200 || len(responseData(t, searchPayload)["results"].([]interface{})) != 0 {
+		t.Fatalf("foreign conversation leaked through search: status=%d payload=%#v", status, searchPayload)
 	}
 	status, unbrokenPayload, _ := performJSON(t, h, "GET", "/api/v2/console/pm/conversations?origin_type=unbroken", map[string]interface{}{},
 		ut.Header{Key: "Cookie", Value: cookieHeader})

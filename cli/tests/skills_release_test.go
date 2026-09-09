@@ -14,6 +14,8 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"strings"
+	"sync/atomic"
 	"testing"
 
 	"cli.eigenflux.ai/internal/skills"
@@ -150,5 +152,71 @@ func TestSignedSequenceConflictAndAtomicRecovery(t *testing.T) {
 	}
 	if err := skills.ValidateSignedRelease(recovered); err == nil {
 		t.Fatal("signed inconsistent revision accepted")
+	}
+}
+
+func TestConfiguredReleaseRequiresAttributionCapableCLI(t *testing.T) {
+	configBytes, err := os.ReadFile("../.cli.config")
+	if err != nil {
+		t.Fatal(err)
+	}
+	settings := map[string]string{}
+	for _, line := range strings.Split(string(configBytes), "\n") {
+		key, value, ok := strings.Cut(strings.TrimSpace(line), "=")
+		if ok && !strings.HasPrefix(key, "#") {
+			settings[key] = value
+		}
+	}
+	if settings["CLI_VERSION"] == "" || settings["SKILLS_MIN_CLI_VERSION"] == "" {
+		t.Fatal("release configuration must specify CLI and minimum compatible versions")
+	}
+	publicKey, privateKey, err := ed25519.GenerateKey(rand.Reader)
+	if err != nil {
+		t.Fatal(err)
+	}
+	previousKey := skills.VerifyPublicKeyBase64
+	skills.VerifyPublicKeyBase64 = base64.StdEncoding.EncodeToString(publicKey)
+	t.Cleanup(func() { skills.VerifyPublicKeyBase64 = previousKey })
+	manifest, archive := signedRelease(t, privateKey, 10, "attribution-aware installation")
+	manifest.CLIVersion = settings["CLI_VERSION"]
+	manifest.MinCLIVersion = settings["SKILLS_MIN_CLI_VERSION"]
+	if err := skills.SignManifest(manifest, privateKey); err != nil {
+		t.Fatal(err)
+	}
+	manifestBytes, err := json.Marshal(manifest)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var tarRequests atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/skills/latest/manifest.json", "/cli/latest/manifest.json":
+			_, _ = w.Write(manifestBytes)
+		case "/skills/latest/skills.tar.gz", "/cli/latest/skills.tar.gz":
+			tarRequests.Add(1)
+			_, _ = w.Write(archive)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(server.Close)
+	options := skills.SyncOptions{
+		Into: filepath.Join(t.TempDir(), "skills"), CLIVersion: "0.0.42", CDNBase: server.URL,
+	}
+	// 0.0.42 predates signed install referrals and must not adopt this release.
+	if _, err := skills.Sync(options); err == nil || !strings.Contains(err.Error(), "upgrade the CLI") {
+		t.Fatalf("CLI without attribution support was not rejected: %v", err)
+	}
+	if tarRequests.Load() != 0 {
+		t.Fatal("incompatible CLI downloaded the release archive")
+	}
+	options.CLIVersion = settings["CLI_VERSION"]
+	result, err := skills.Sync(options)
+	if err != nil || result == nil || !result.Atomic || !result.VerifiedManifest {
+		t.Fatalf("configured CLI could not install its signed Skills release: result=%+v err=%v", result, err)
+	}
+	content, err := os.ReadFile(filepath.Join(options.Into, "ef-profile", "SKILL.md"))
+	if err != nil || string(content) != "attribution-aware installation" {
+		t.Fatalf("configured CLI did not install the expected release: content=%q err=%v", content, err)
 	}
 }

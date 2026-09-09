@@ -217,6 +217,62 @@ deploy_main_prepare_source() {
   printf '%s\n' "${source_dir}"
 }
 
+# API releases have their own source and pointer: changing the shared current
+# bundle would also change relative resources for still-running RPC services.
+deploy_main_api_only() {
+  local source_dir=$1 state_dir=$2 target=$3
+  local override_dir=${4:-/etc/systemd/system/eigenflux-app@api.service.d}
+  local override_file=${override_dir}/90-api-only.conf
+  local release_dir old_link="" had_override=0
+  mkdir -p "${state_dir}/api-releases" || return 1
+  release_dir="$(mktemp -d "${state_dir}/api-releases/${target}.XXXXXX")" || return 1
+  chmod 0755 "${release_dir}" || return 1
+  mv "${source_dir}" "${release_dir}/source" || return 1
+  mkdir -p "${release_dir}/bin" || return 1
+  (cd "${release_dir}/source" && go build -o "${release_dir}/bin/api" ./api) || return 1
+  printf '%s\n' "${target}" > "${release_dir}/revision" || return 1
+  # Require a healthy old API before changing its unit or executable.
+  systemctl is-active --quiet eigenflux-app@api || return 1
+  curl --max-time 10 -fsS http://127.0.0.1:8080/api/v1/website/stats >/dev/null || return 1
+  if [[ -e "${override_file}" ]]; then
+    had_override=1
+    cp -p "${override_file}" "${release_dir}/previous-override" || return 1
+  fi
+  if [[ -L "${state_dir}/api-current" ]]; then
+    old_link="$(readlink "${state_dir}/api-current")"
+  elif [[ -e "${state_dir}/api-current" ]]; then
+    echo "Refusing non-symlink api-current" >&2
+    return 1
+  fi
+  mkdir -p "${override_dir}" || return 1
+  printf '[Service]\nWorkingDirectory=%s/api-current/source\nExecStartPre=\nExecStart=\nExecStartPre=/usr/bin/test -x %s/api-current/bin/api\nExecStart=%s/api-current/bin/api\n' \
+    "${state_dir}" "${state_dir}" "${state_dir}" > "${release_dir}/override" || return 1
+  if install -m 0644 "${release_dir}/override" "${override_file}" &&
+    ln -s "${release_dir}" "${state_dir}/.api-next.$$" &&
+    mv -Tf "${state_dir}/.api-next.$$" "${state_dir}/api-current" &&
+    systemctl daemon-reload &&
+    bash "${release_dir}/source/scripts/cloud/restart.sh" api &&
+    curl --retry 15 --retry-delay 1 --retry-connrefused --max-time 3 -fsS \
+      http://127.0.0.1:8080/api/v1/website/stats >/dev/null; then
+    printf '%s\n' "${target}" > "${state_dir}/api-deployed-sha"
+    echo "API-only deployment completed: ${target}; other services and migrations unchanged"
+    return 0
+  fi
+  echo "API health check failed; restoring previous API configuration" >&2
+  if [[ "${had_override}" == 1 ]]; then
+    install -m 0644 "${release_dir}/previous-override" "${override_file}" || return 1
+  else
+    rm -f "${override_file}" || return 1
+  fi
+  if [[ -n "${old_link}" ]]; then
+    ln -s "${old_link}" "${state_dir}/.api-rollback.$$" || return 1
+    mv -Tf "${state_dir}/.api-rollback.$$" "${state_dir}/api-current" || return 1
+  fi
+  systemctl daemon-reload
+  bash "${release_dir}/source/scripts/cloud/restart.sh" api
+  return 1
+}
+
 deploy_main_run() {
   local project_root=$1
   local lock_file=$2
@@ -231,6 +287,10 @@ deploy_main_run() {
   local requested_sha=""
   case "${1:-}" in
     "") ;;
+    --api-only)
+      [[ $# -eq 1 ]] || return 2
+      mode="api-only"
+      ;;
     --rollback)
       mode="rollback"
       requested_sha="${2:-}"
@@ -289,6 +349,12 @@ deploy_main_run() {
   local source_dir release_dir
   source_dir="$(deploy_main_prepare_source "${project_root}" "${state_dir}" "${target}" \
     "${runtime_env}" "${deploy_user}" "${deploy_home}")" || return 1
+  if [[ "${mode}" == "api-only" ]]; then
+    deploy_main_assert_clean "${project_root}" "before API build" "${deploy_user}" "${deploy_home}" || return 1
+    deploy_main_api_only "${source_dir}" "${state_dir}" "${target}" || return 1
+    deploy_main_assert_clean "${project_root}" "after API deployment" "${deploy_user}" "${deploy_home}"
+    return $?
+  fi
   if ! bash "${source_dir}/scripts/common/build.sh"; then
     rm -rf "${source_dir}"
     return 1
@@ -303,6 +369,11 @@ deploy_main_run() {
 
   deploy_main_assert_clean "${project_root}" "before restart" "${deploy_user}" "${deploy_home}" || return 1
   deploy_main_activate_build "${state_dir}" "${release_dir}" || return 1
+  # A later full release must update API instances previously released alone.
+  if [[ -L "${state_dir}/api-current" ]]; then
+    ln -s "${release_dir}" "${state_dir}/.api-full.$$" || return 1
+    mv -Tf "${state_dir}/.api-full.$$" "${state_dir}/api-current" || return 1
+  fi
   deploy_main_restart_services || return 1
   bash "${source_dir}/scripts/cloud/check_services.sh" || return 1
 

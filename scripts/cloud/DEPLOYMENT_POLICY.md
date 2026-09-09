@@ -39,6 +39,23 @@ never load runtime files from the writable production checkout.
 
 ## Updating this policy
 
+## API-only releases
+
+For reviewed API-only changes requiring no database migration or RPC rollout,
+a root operator may install the main-merged `deploy_main_lib.sh` and
+`cloud/systemd/eigenflux-deploy-api.service.tpl` as the root-owned library and
+`eigenflux-deploy-api.service`. Start that service to build and restart only
+API. It uses the same deployment lock, fixed official remote, clean-checkout
+gate and root-managed environment. No migration or other service restart runs.
+API has a separate root-owned release/source pointer and per-instance override;
+health-check failure restores the previous override and API release. The old
+release is retained. A later full deployment advances both release pointers.
+Do not run the full installer for this update: it bootstraps every service and
+copies environment values. API authorization remains disabled unless separately
+configured and approved. Installing this main-merged entrypoint and policy is
+permitted before its first API-only deployment.
+
+
 The authoritative copy is `/etc/eigenflux/DEPLOYMENT_POLICY.md`, installed once
 by `scripts/cloud/install_main_deployer.sh`; ordinary deployments do not touch
 `/etc/eigenflux`. After a change to this file is merged and deployed, a root

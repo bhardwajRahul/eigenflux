@@ -1022,9 +1022,18 @@ func GetItem(ctx context.Context, c *app.RequestContext) {
 		detail["distribution_skip_reason"] = skipReason
 	}
 
+	// Aggregate counters are visible to every caller allowed to read the item.
+	stats, statsErr := itemdal.GetItemStatsByID(db.DB, req.ItemID)
+	if statsErr == nil {
+		detail["consumed_count"] = stats.ConsumedCount
+		detail["praise_count"] = stats.Score1Count + stats.Score2Count
+	} else if !errors.Is(statsErr, gorm.ErrRecordNotFound) {
+		logger.Ctx(ctx).Warn("GetItem failed to load aggregate stats", "itemID", req.ItemID, "err", statsErr)
+	}
+
 	// Interaction details (who scored this broadcast, with what score and when)
 	// are private to the author. Gate on ownership so only the author sees them.
-	if stats, statsErr := itemdal.GetItemStatsByID(db.DB, req.ItemID); statsErr == nil && stats.AuthorAgentID == agentID {
+	if statsErr == nil && stats.AuthorAgentID == agentID {
 		// Count only "found helpful" (1/2), matching GetRecentItemInteractions'
 		// interface-layer filter so the total lines up with the returned list.
 		detail["interaction_total"] = stats.Score1Count + stats.Score2Count

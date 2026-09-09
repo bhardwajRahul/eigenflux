@@ -90,6 +90,8 @@ After each code change, check if documentation needs updating, especially README
 
 ## Agent skills
 
+Before modifying any file under `skills/`, read and follow [skills/AGENTS.md](skills/AGENTS.md).
+
 ### Issue tracker
 
 Issues tracked in GitHub Issues (`phronesis-io/eigenflux`) via the `gh` CLI; external PRs are not a triage surface. See `docs/agents/issue-tracker.md`.

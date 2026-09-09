@@ -163,24 +163,72 @@ func TestConsoleActivityLogRespectsLimit(t *testing.T) {
 
 func TestConsoleActivityLogRespectsHours(t *testing.T) {
 	testutil.WaitForAPI(t)
-	token, _, _ := testutil.LoginAndGetToken(t, testEmail)
+	suffix := time.Now().UnixNano()
+	email := fmt.Sprintf("console-activity-hours-%d@test.com", suffix)
+	token, agentID, _ := testutil.LoginAndGetToken(t, email)
+	t.Cleanup(func() { testutil.CleanupTestEmails(t, email) })
 
-	result := testutil.DoGet(t, "/api/v1/console/activity-log?hours=1", token)
-	assertCode(t, result, 0)
+	now := time.Now()
+	fixtures := []struct {
+		logID     int64
+		summary   string
+		createdAt int64
+	}{
+		{suffix, "activity inside one-hour window", now.Add(-30 * time.Minute).UnixMilli()},
+		{suffix + 1, "activity outside one-hour window", now.Add(-2 * time.Hour).UnixMilli()},
+	}
+	t.Cleanup(func() {
+		if _, err := testutil.TestDB.Exec(`DELETE FROM agent_activity_log WHERE agent_id = $1 AND log_id IN ($2, $3)`, agentID, fixtures[0].logID, fixtures[1].logID); err != nil {
+			t.Errorf("clean activity fixtures: %v", err)
+		}
+	})
+	for _, fixture := range fixtures {
+		if _, err := testutil.TestDB.Exec(`INSERT INTO agent_activity_log (log_id, agent_id, event_type, summary, detail, created_at)
+			VALUES ($1, $2, 'feed_pull', $3, '{}', $4)`, fixture.logID, agentID, fixture.summary, fixture.createdAt); err != nil {
+			t.Fatalf("insert activity fixture: %v", err)
+		}
+	}
 
-	data := result["data"].(map[string]interface{})
-	events := data["events"].([]interface{})
-	// Verify all returned events are within 1 hour
-	oneHourAgoMs := float64(time.Now().Add(-1*time.Hour).UnixMilli()) - 1000 // 1s buffer
-	for i, e := range events {
-		event := e.(map[string]interface{})
-		createdAt, ok := event["created_at"].(float64)
-		if !ok {
-			continue
-		}
-		if createdAt < oneHourAgoMs {
-			t.Fatalf("event[%d] created_at=%v is older than 1 hour", i, createdAt)
-		}
+	for _, hours := range []int{1, 3} {
+		t.Run(fmt.Sprintf("hours=%d", hours), func(t *testing.T) {
+			requestStartedAt := time.Now()
+			result := testutil.DoGet(t, fmt.Sprintf("/api/v1/console/activity-log?hours=%d", hours), token)
+			assertCode(t, result, 0)
+			data := result["data"].(map[string]interface{})
+			events, ok := data["events"].([]interface{})
+			if !ok {
+				t.Fatal("expected events array in response")
+			}
+			seen := map[string]int{}
+			sinceMs := requestStartedAt.Add(-time.Duration(hours) * time.Hour).UnixMilli()
+			for i, raw := range events {
+				event := raw.(map[string]interface{})
+				eventTime, ok := event["time"].(float64)
+				if !ok {
+					t.Fatalf("event[%d] missing numeric time: %v", i, event)
+				}
+				if eventTime < float64(sinceMs) {
+					t.Fatalf("event[%d] time=%v is outside the %d-hour window", i, eventTime, hours)
+				}
+				for _, fixture := range fixtures {
+					if event["summary"] == fixture.summary {
+						seen[fixture.summary]++
+						if eventTime != float64(fixture.createdAt) {
+							t.Errorf("fixture %q time=%v, want %d", fixture.summary, eventTime, fixture.createdAt)
+						}
+					}
+				}
+			}
+			for _, fixture := range fixtures {
+				wantCount := 0
+				if fixture.createdAt >= sinceMs {
+					wantCount = 1
+				}
+				if got := seen[fixture.summary]; got != wantCount {
+					t.Errorf("fixture %q appeared %d times in %d-hour window, want %d", fixture.summary, got, hours, wantCount)
+				}
+			}
+		})
 	}
 }
 
@@ -278,20 +326,71 @@ func TestConsoleHighlightFeedbackInvalidType(t *testing.T) {
 
 func TestConsoleSettingsGetDefaults(t *testing.T) {
 	testutil.WaitForAPI(t)
-	email := fmt.Sprintf("console-settings-defaults-%d@test.com", time.Now().UnixNano()%1_000_000)
-	token, _, _ := testutil.LoginAndGetToken(t, email)
+	for _, tc := range []struct {
+		name     string
+		age      time.Duration
+		override int
+		want     int
+	}{
+		{name: "new_agent", want: 3600},
+		{name: "after_three_days", age: 4 * 24 * time.Hour, want: 300},
+		{name: "new_agent_explicit_setting", override: 900, want: 900},
+		{name: "after_three_days_explicit_setting", age: 4 * 24 * time.Hour, override: 900, want: 900},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			email := fmt.Sprintf("console-settings-defaults-%d@test.com", time.Now().UnixNano())
+			token, agentID, _ := testutil.LoginAndGetToken(t, email)
+			t.Cleanup(func() { testutil.CleanupTestEmails(t, email) })
+			t.Cleanup(func() {
+				if _, err := testutil.TestDB.Exec(`DELETE FROM agent_settings WHERE agent_id = $1`, agentID); err != nil {
+					t.Errorf("clean settings fixture: %v", err)
+				}
+			})
 
-	result := testutil.DoGet(t, "/api/v1/console/settings", token)
-	assertCode(t, result, 0)
+			// Materialize the settings row before setting up registration age.
+			initial := testutil.DoGet(t, "/api/v1/console/settings", token)
+			assertCode(t, initial, 0)
+			if tc.age > 0 {
+				createdAt := time.Now().Add(-tc.age).UnixMilli()
+				tx, err := testutil.TestDB.Begin()
+				if err != nil {
+					t.Fatalf("begin settings age fixture: %v", err)
+				}
+				defer tx.Rollback()
+				// Keep the profile timestamp and its settings cache consistent.
+				for _, query := range []string{
+					`UPDATE agents SET created_at = $1 WHERE agent_id = $2`,
+					`UPDATE agent_settings SET agent_created_at_ms = $1 WHERE agent_id = $2`,
+				} {
+					result, err := tx.Exec(query, createdAt, agentID)
+					if err != nil {
+						t.Fatalf("set registration age: %v", err)
+					}
+					if rows, err := result.RowsAffected(); err != nil || rows != 1 {
+						t.Fatalf("set registration age affected %d rows, want 1: %v", rows, err)
+					}
+				}
+				if err := tx.Commit(); err != nil {
+					t.Fatalf("commit registration age fixture: %v", err)
+				}
+			}
+			if tc.override > 0 {
+				result := testutil.DoPut(t, "/api/v1/console/settings", map[string]interface{}{
+					"feed_poll_interval": tc.override,
+				}, token)
+				assertCode(t, result, 0)
+			}
 
-	data := result["data"].(map[string]interface{})
-	recurringPublish, ok := data["recurring_publish"].(bool)
-	if !ok || !recurringPublish {
-		t.Fatalf("expected recurring_publish=true by default, got %v", data["recurring_publish"])
-	}
-	feedPoll := int(data["feed_poll_interval"].(float64))
-	if feedPoll != 300 {
-		t.Fatalf("expected feed_poll_interval=300 by default, got %d", feedPoll)
+			result := testutil.DoGet(t, "/api/v1/console/settings", token)
+			assertCode(t, result, 0)
+			data := result["data"].(map[string]interface{})
+			if recurringPublish, ok := data["recurring_publish"].(bool); !ok || !recurringPublish {
+				t.Fatalf("expected recurring_publish=true by default, got %v", data["recurring_publish"])
+			}
+			if feedPoll, ok := data["feed_poll_interval"].(float64); !ok || feedPoll != float64(tc.want) {
+				t.Fatalf("expected feed_poll_interval=%d, got %v", tc.want, data["feed_poll_interval"])
+			}
+		})
 	}
 }
 

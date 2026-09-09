@@ -1,6 +1,6 @@
 # Testing
 
-Test code organized by functional modules in `tests/` subdirectories, shared utility functions in `tests/testutil/` package.
+Tests live beside the packages they exercise and in the service integration suites under `tests/`. Shared integration helpers live in `tests/testutil/`. The CLI and Console API are independent Go modules; Console Web has its own Node test command.
 
 ## Test Directories
 
@@ -41,9 +41,19 @@ that is not `APP_ENV=test` with deterministic providers.
 ## Running Tests
 
 ```bash
-# Run all tests (requires all services running)
-./scripts/local/start_local.sh
-go test -v ./tests/...
+# Root module: start local services and run all root packages
+./tests/run.sh
+
+# Root module with an already-running local stack
+./tests/run.sh --skip-start
+
+# Run only the service integration suites
+./tests/run.sh --dir ./tests/... --skip-start
+
+# Independent modules (run from each module directory)
+(cd cli && go test ./...)
+(cd console/console_api && go test ./...)
+(cd console/webapp && npm test)
 
 # Unit tests
 go test -v ./pipeline/llm/           # LLM client
@@ -53,5 +63,7 @@ go test -v ./pkg/cache/              # Cache
 # Manual email integration
 python3 scripts/local/manual_register.py --email you@example.com
 ```
+
+The runner uses the root `.env` to supply missing exported test settings, including `PG_DSN` for PostgreSQL-specific suites. Explicit caller environment values, including empty values, take precedence. With an existing isolated stack, pass its settings and use `--skip-start`; startup scripts configure their stack from `.env`. The root `./...` pattern does not cross nested `go.mod` boundaries. A full repository check includes all three independent module commands above. Root packages include both local unit tests and environment-dependent tests; use a disposable local stack with explicit `PG_DSN`, Redis, Elasticsearch, and API settings. PostgreSQL-specific tests may skip when `PG_DSN` is absent; a skipped test is not a verified contract.
 
 Whitelist-matched emails automatically use `MOCK_UNIVERSAL_OTP`, other emails manually input OTP.

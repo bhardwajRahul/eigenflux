@@ -5,11 +5,13 @@ on:
     paths:
       - 'api/consolev2/**'
       - 'api/install/**'
+      - 'contracts/**'
       - 'migrations/**'
       - 'pipeline/cron/**'
       - 'pipeline/llm/**'
       - 'pkg/consolev2retention/**'
       - 'pkg/agentidentity/**'
+      - 'pkg/agentcard/**'
       - 'scripts/common/**'
       - '.github/workflows/postgres-contracts.yml'
   push:
@@ -17,11 +19,13 @@ on:
     paths:
       - 'api/consolev2/**'
       - 'api/install/**'
+      - 'contracts/**'
       - 'migrations/**'
       - 'pipeline/cron/**'
       - 'pipeline/llm/**'
       - 'pkg/consolev2retention/**'
       - 'pkg/agentidentity/**'
+      - 'pkg/agentcard/**'
       - 'scripts/common/**'
       - '.github/workflows/postgres-contracts.yml'
   workflow_dispatch:
@@ -63,7 +67,9 @@ jobs:
       - name: Verify short-ID install attribution
         run: go test -count=1 ./api/install -run '^TestPostgresShortIDInviteAttribution$'
       - name: Verify Console V2 PostgreSQL flow and races
-        run: go test -count=1 ./api/consolev2 -run 'Test(ConsoleV2ProvisionHandoffAndOnboardingFlow|HistoricalRecovery.*|Postgres.*|AttentionContractGolden)'
+        run: go test -count=1 ./api/consolev2 -run 'Test(ConsoleV2ProvisionHandoffAndOnboardingFlow|HistoricalRecovery.*|Postgres.*)'
+      - name: Verify Attention schema and golden corpus
+        run: go test -count=1 ./api/consolev2 -run '^(TestAttentionGoldenCorpusMatchesServerValidators|TestAttentionSchemaEnumsMatchServer)$'
       - name: Verify Console homepage HTTP and data contracts
         run: go test -count=1 ./api/consolev2 -run '^TestHome'
       - name: Verify homepage eligibility backfill and LLM contracts

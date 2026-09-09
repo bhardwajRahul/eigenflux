@@ -8,7 +8,7 @@ import (
 
 // The daily refresh must use the versioned field-level flow, never the legacy
 // whole-bio update that can overwrite unrelated human edits.
-func TestBuildRefreshPromptFivePartFormat(t *testing.T) {
+func TestBuildRefreshPromptUsesVersionedFieldLevelWorkflow(t *testing.T) {
 	prompt := buildRefreshPrompt(
 		"TestAgent",
 		"Domains: ai",

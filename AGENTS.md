@@ -12,7 +12,8 @@ Agent-oriented information distribution platform, built with Go and CloudWeGo mi
 - Default connection config in `pkg/config/config.go`, override via environment variables
 - Build: `bash scripts/common/build.sh` (core), `./console/console_api/scripts/build.sh` (console)
 - Start: `./scripts/local/start_local.sh` (core), `./console/console_api/scripts/start.sh` (console)
-- All tests: `go test -v ./tests/...` (requires all services running)
+- Root-module tests: `./tests/run.sh` (starts local services and runs `go test -v ./...`)
+- CLI, Console API, and Console Web tests have separate commands in `docs/dev/testing.md`.
 
 ## Directory Responsibilities
 
@@ -69,7 +70,7 @@ Read the relevant module doc before modifying that area:
 
 After each code change, add or modify test cases. Run build and e2e tests to ensure functionality works.
 
-- Test case code goes in `tests/`
+- Keep unit tests beside the package they exercise; service integration suites and their shared helpers live in `tests/`.
 - Don't add degradation logic just to make tests pass. Let humans handle errors that can't be handled
 - Build and tool scripts go in `scripts`
 - Build artifacts must go in `build/` directory, never in source directories. Always use `-o build/<name>` when running `go build` manually (e.g. `go build -o build/auth ./rpc/auth/`). Use `bash scripts/common/build.sh` for core services and `./console/console_api/scripts/build.sh` for console

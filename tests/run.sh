@@ -9,6 +9,9 @@ usage() {
 Usage:
   ./tests/run.sh [<dir_shortcut>] [--dir <test_pkg>] [--case <regex>] [--skip-start] [extra go test args...]
 
+Defaults to every package in the root Go module, including colocated tests.
+CLI, Console API, and Console Web have separate module commands in docs/dev/testing.md.
+
 Examples:
   ./tests/run.sh
   ./tests/run.sh e2e
@@ -19,7 +22,7 @@ Examples:
 EOF
 }
 
-TEST_DIR="./tests/..."
+TEST_DIR="./..."
 TEST_CASE=""
 SKIP_START="false"
 EXTRA_ARGS=()
@@ -46,7 +49,7 @@ while [[ $# -gt 0 ]]; do
       ;;
     *)
       # Shorthand: first free arg like "e2e" means --dir e2e.
-      if [[ "$TEST_DIR" == "./tests/..." ]] && [[ "$1" != -* ]]; then
+      if [[ "$TEST_DIR" == "./..." ]] && [[ "$1" != -* ]]; then
         TEST_DIR="$1"
       else
         EXTRA_ARGS+=("$1")
@@ -63,6 +66,28 @@ if [[ "$TEST_DIR" != ./* ]]; then
   elif [[ -d "$PROJECT_ROOT/$TEST_DIR" ]]; then
     TEST_DIR="./$TEST_DIR"
   fi
+fi
+
+# Match config.Load(): .env supplies defaults, while exported caller values
+# (including an explicitly empty PG_DSN) retain precedence.
+if [[ -f "$PROJECT_ROOT/.env" ]]; then
+  CALLER_ENV_NAMES=()
+  CALLER_ENV_VALUES=()
+  while IFS= read -r env_name; do
+    CALLER_ENV_NAMES+=("$env_name")
+    CALLER_ENV_VALUES+=("${!env_name}")
+  done < <(compgen -e)
+  set -a
+  # shellcheck disable=SC1091
+  source "$PROJECT_ROOT/.env"
+  set +a
+  for ((i = 0; i < ${#CALLER_ENV_NAMES[@]}; i++)); do
+    env_name="${CALLER_ENV_NAMES[i]}"
+    if [[ "${!env_name}" != "${CALLER_ENV_VALUES[i]}" ]]; then
+      export "$env_name=${CALLER_ENV_VALUES[i]}"
+    fi
+  done
+  unset CALLER_ENV_NAMES CALLER_ENV_VALUES env_name i
 fi
 
 # Prefer project-pinned Go via mise when available.

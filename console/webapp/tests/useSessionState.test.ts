@@ -20,7 +20,7 @@ class MemoryStorage {
 }
 
 describe("session page state", () => {
-  it("restores the third page with 100 rows after navigating away", () => {
+  it("stores and reads page number and page size independently", () => {
     const storage = new MemoryStorage();
 
     writeSessionValue(storage, "agents.page", 3);

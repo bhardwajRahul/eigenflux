@@ -2066,26 +2066,44 @@ func TestBroadcastConv_IceBreakBypassedAfterBefriending(t *testing.T) {
 	}
 	convID := resp["data"].(map[string]interface{})["conv_id"].(string)
 
-	// Sender tries second message — should be blocked by ice-break (author hasn't replied).
+	// Exhaust the three-message window before testing the friendship override.
+	for messageNumber := 2; messageNumber <= 3; messageNumber++ {
+		resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
+			"conv_id": convID,
+			"content": fmt.Sprintf("Pre-friendship message %d", messageNumber),
+		}, sender["token"].(string))
+		if code := int(resp["code"].(float64)); code != 0 {
+			t.Fatalf("message %d within ice-break window failed: code=%d msg=%v", messageNumber, code, resp["msg"])
+		}
+	}
+
+	// The fourth message is blocked until the author replies or they become friends.
 	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
 		"conv_id": convID,
-		"content": "Second broadcast msg",
+		"content": "Fourth broadcast msg",
 	}, sender["token"].(string))
 	code = int(resp["code"].(float64))
 	if code != 429 {
 		t.Fatalf("Expected ice-break 429 before befriending, got code=%d msg=%v", code, resp["msg"])
 	}
-	t.Logf("Ice-break correctly blocked second message before befriending")
+	t.Logf("Ice-break correctly blocked fourth message before befriending")
 
 	// Now they become friends.
 	applyResp := testutil.DoPost(t, "/api/v1/relations/apply", map[string]string{
 		"to_uid": author["agent_id"].(string),
 	}, sender["token"].(string))
+	if code := int(applyResp["code"].(float64)); code != 0 {
+		t.Fatalf("friend request failed: code=%d msg=%v", code, applyResp["msg"])
+	}
 	requestID := applyResp["data"].(map[string]interface{})["request_id"].(string)
-	testutil.DoPost(t, "/api/v1/relations/handle", map[string]interface{}{
+	acceptResp := testutil.DoPost(t, "/api/v1/relations/handle", map[string]interface{}{
 		"request_id": requestID,
 		"action":     1,
 	}, author["token"].(string))
+
+	if code := int(acceptResp["code"].(float64)); code != 0 {
+		t.Fatalf("accept friend request failed: code=%d msg=%v", code, acceptResp["msg"])
+	}
 
 	// After becoming friends, sender should be able to send in the same broadcast conv.
 	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
@@ -2101,7 +2119,7 @@ func TestBroadcastConv_IceBreakBypassedAfterBefriending(t *testing.T) {
 	// Sender can send yet another message freely.
 	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
 		"conv_id": convID,
-		"content": "Third message after befriending",
+		"content": "Another message after befriending",
 	}, sender["token"].(string))
 	code = int(resp["code"].(float64))
 	if code != 0 {
@@ -2142,7 +2160,18 @@ func TestBroadcastConv_AuthorInitiatedFriendship_IceBreakBypassed(t *testing.T) 
 	}
 	convID := resp["data"].(map[string]interface{})["conv_id"].(string)
 
-	// Sender tries second message — should be blocked by ice-break.
+	// Exhaust the three-message window before testing the friendship override.
+	for messageNumber := 2; messageNumber <= 3; messageNumber++ {
+		resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
+			"conv_id": convID,
+			"content": fmt.Sprintf("Pre-friendship message %d", messageNumber),
+		}, sender["token"].(string))
+		if code := int(resp["code"].(float64)); code != 0 {
+			t.Fatalf("message %d within ice-break window failed: code=%d msg=%v", messageNumber, code, resp["msg"])
+		}
+	}
+
+	// The fourth message is blocked before they become friends.
 	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
 		"conv_id": convID,
 		"content": "Blocked msg",
@@ -2156,11 +2185,18 @@ func TestBroadcastConv_AuthorInitiatedFriendship_IceBreakBypassed(t *testing.T) 
 	applyResp := testutil.DoPost(t, "/api/v1/relations/apply", map[string]string{
 		"to_uid": sender["agent_id"].(string),
 	}, author["token"].(string))
+	if code := int(applyResp["code"].(float64)); code != 0 {
+		t.Fatalf("friend request failed: code=%d msg=%v", code, applyResp["msg"])
+	}
 	requestID := applyResp["data"].(map[string]interface{})["request_id"].(string)
-	testutil.DoPost(t, "/api/v1/relations/handle", map[string]interface{}{
+	acceptResp := testutil.DoPost(t, "/api/v1/relations/handle", map[string]interface{}{
 		"request_id": requestID,
 		"action":     1,
 	}, sender["token"].(string))
+
+	if code := int(acceptResp["code"].(float64)); code != 0 {
+		t.Fatalf("accept friend request failed: code=%d msg=%v", code, acceptResp["msg"])
+	}
 
 	// After befriending (author-initiated), sender should be unblocked.
 	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
@@ -2204,15 +2240,41 @@ func TestBroadcastConv_UnfriendReactivatesIceBreak(t *testing.T) {
 	}
 	convID := resp["data"].(map[string]interface{})["conv_id"].(string)
 
+	// Exhaust the three-message window before testing the friendship override.
+	for messageNumber := 2; messageNumber <= 3; messageNumber++ {
+		resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
+			"conv_id": convID,
+			"content": fmt.Sprintf("Pre-friendship message %d", messageNumber),
+		}, sender["token"].(string))
+		if code := int(resp["code"].(float64)); code != 0 {
+			t.Fatalf("message %d within ice-break window failed: code=%d msg=%v", messageNumber, code, resp["msg"])
+		}
+	}
+
+	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{
+		"conv_id": convID,
+		"content": "Fourth message before befriending",
+	}, sender["token"].(string))
+	if code := int(resp["code"].(float64)); code != 429 {
+		t.Fatalf("expected exhausted ice-break window before befriending, got code=%d msg=%v", code, resp["msg"])
+	}
+
 	// Become friends.
 	applyResp := testutil.DoPost(t, "/api/v1/relations/apply", map[string]string{
 		"to_uid": author["agent_id"].(string),
 	}, sender["token"].(string))
+	if code := int(applyResp["code"].(float64)); code != 0 {
+		t.Fatalf("friend request failed: code=%d msg=%v", code, applyResp["msg"])
+	}
 	requestID := applyResp["data"].(map[string]interface{})["request_id"].(string)
-	testutil.DoPost(t, "/api/v1/relations/handle", map[string]interface{}{
+	acceptResp := testutil.DoPost(t, "/api/v1/relations/handle", map[string]interface{}{
 		"request_id": requestID,
 		"action":     1,
 	}, author["token"].(string))
+
+	if code := int(acceptResp["code"].(float64)); code != 0 {
+		t.Fatalf("accept friend request failed: code=%d msg=%v", code, acceptResp["msg"])
+	}
 
 	// Friendship bypasses ice-break.
 	resp = testutil.DoPost(t, "/api/v1/pm/send", map[string]interface{}{

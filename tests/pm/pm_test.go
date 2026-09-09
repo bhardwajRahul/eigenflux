@@ -152,71 +152,8 @@ func TestPMFullFlow(t *testing.T) {
 	})
 
 	// ============================================================
-	// Test 2: SendPM — ice break blocks same sender (via item_id)
-	// ============================================================
-	t.Run("SendPM_IceBreakBlocksSameSender", func(t *testing.T) {
-		resp := testutil.DoPost(t, "/api/v1/pm/send", map[string]string{
-			"content": "Another message before reply",
-			"item_id": strconv.FormatInt(mockItemID, 10),
-		}, userToken)
-
-		code := int(resp["code"].(float64))
-		if code != 429 {
-			t.Fatalf("expected code=429 (ice break), got code=%d msg=%v", code, resp["msg"])
-		}
-	})
-
-	// ============================================================
-	// Test 2b: SendPM — ice break blocks same sender via conv_id
-	// ============================================================
-	t.Run("SendPM_IceBreakBlocksViaConvID", func(t *testing.T) {
-		if convID == "" {
-			t.Skip("skipped: no conv_id from previous steps")
-		}
-		resp := testutil.DoPost(t, "/api/v1/pm/send", map[string]string{
-			"content": "Trying to continue via conv_id before ice break",
-			"conv_id": convID,
-		}, userToken)
-
-		code := int(resp["code"].(float64))
-		if code != 429 {
-			t.Fatalf("expected code=429 (ice break via conv_id), got code=%d msg=%v", code, resp["msg"])
-		}
-	})
-
-	// ============================================================
-	// Test 3: FetchPM — author sees unread message
-	// ============================================================
-	t.Run("FetchPM_AuthorSeesMessage", func(t *testing.T) {
-		resp := testutil.DoGet(t, "/api/v1/pm/fetch", authorToken)
-		code := int(resp["code"].(float64))
-		if code != 0 {
-			t.Fatalf("FetchPM failed: code=%d msg=%v", code, resp["msg"])
-		}
-		data := resp["data"].(map[string]interface{})
-		messages := data["messages"].([]interface{})
-		if len(messages) != 1 {
-			t.Fatalf("expected 1 unread message, got %d", len(messages))
-		}
-		msg := messages[0].(map[string]interface{})
-		if msg["content"].(string) != "Hello, I saw your item!" {
-			t.Fatalf("unexpected message content: %v", msg["content"])
-		}
-		// Verify agent names are present
-		if msg["sender_name"].(string) != "PM User" {
-			t.Fatalf("expected sender_name='PM User', got %v", msg["sender_name"])
-		}
-		if msg["receiver_name"].(string) != "PM Author" {
-			t.Fatalf("expected receiver_name='PM Author', got %v", msg["receiver_name"])
-		}
-		convID = msg["conv_id"].(string)
-		t.Logf("FetchPM OK: got message in conv_id=%s", convID)
-	})
-
-	// ============================================================
-	// Test 3b: ListConversations(unbroken) — before the ice is broken the
-	// author sees the inbound DM in the "non-friend" tab, and it is absent
-	// from the default (>= 2) list.
+	// ListConversations(unbroken) includes the first inbound non-friend DM.
+	// The default conversation list also includes it from the first message.
 	// ============================================================
 	t.Run("ListConversations_UnbrokenInbound", func(t *testing.T) {
 		resp := testutil.DoGet(t, "/api/v1/pm/conversations?origin_type=unbroken", authorToken)
@@ -241,13 +178,116 @@ func TestPMFullFlow(t *testing.T) {
 			t.Fatalf("expected unbroken conv_id=%s in author's non-friend list", convID)
 		}
 
-		// The same conversation must NOT appear in the default ice-broken list yet.
+		// The default list must include the conversation from the opening message.
 		def := testutil.DoGet(t, "/api/v1/pm/conversations", authorToken)
+		if code := int(def["code"].(float64)); code != 0 {
+			t.Fatalf("ListConversations failed: code=%d msg=%v", code, def["msg"])
+		}
+		found = false
 		for _, c := range def["data"].(map[string]interface{})["conversations"].([]interface{}) {
 			if c.(map[string]interface{})["conv_id"].(string) == convID {
-				t.Fatalf("conv_id=%s should be hidden from default list until ice-broken", convID)
+				found = true
 			}
 		}
+		if !found {
+			t.Fatalf("expected opening conv_id=%s in the default list", convID)
+		}
+	})
+
+	// The opening message plus two follow-ups share one three-message window,
+	// regardless of whether the caller addresses the item or the conversation.
+	t.Run("SendPM_IceBreakAllowsThreeMessagesAcrossTargets", func(t *testing.T) {
+		if convID == "" {
+			t.Fatal("opening message did not create a conversation")
+		}
+		for _, payload := range []map[string]string{
+			{"item_id": strconv.FormatInt(mockItemID, 10), "content": "Second message via item before reply"},
+			{"conv_id": convID, "content": "Third message via conversation before reply"},
+		} {
+			resp := testutil.DoPost(t, "/api/v1/pm/send", payload, userToken)
+			if code := int(resp["code"].(float64)); code != 0 {
+				t.Fatalf("message within the three-message window failed: code=%d msg=%v", code, resp["msg"])
+			}
+			if got := resp["data"].(map[string]interface{})["conv_id"]; got != convID {
+				t.Fatalf("follow-up conv_id=%v, want %s", got, convID)
+			}
+		}
+	})
+
+	// ============================================================
+	// Test 2: SendPM — fourth message is blocked via item_id
+	// ============================================================
+	t.Run("SendPM_IceBreakBlocksSameSender", func(t *testing.T) {
+		resp := testutil.DoPost(t, "/api/v1/pm/send", map[string]string{
+			"content": "Fourth message via item before reply",
+			"item_id": strconv.FormatInt(mockItemID, 10),
+		}, userToken)
+
+		code := int(resp["code"].(float64))
+		if code != 429 {
+			t.Fatalf("expected code=429 (ice break), got code=%d msg=%v", code, resp["msg"])
+		}
+	})
+
+	// ============================================================
+	// Test 2b: SendPM — the exhausted window also blocks via conv_id
+	// ============================================================
+	t.Run("SendPM_IceBreakBlocksViaConvID", func(t *testing.T) {
+		if convID == "" {
+			t.Skip("skipped: no conv_id from previous steps")
+		}
+		resp := testutil.DoPost(t, "/api/v1/pm/send", map[string]string{
+			"content": "Fourth message via conversation before reply",
+			"conv_id": convID,
+		}, userToken)
+
+		code := int(resp["code"].(float64))
+		if code != 429 {
+			t.Fatalf("expected code=429 (ice break via conv_id), got code=%d msg=%v", code, resp["msg"])
+		}
+	})
+
+	// ============================================================
+	// Test 3: FetchPM — author sees exactly the three allowed messages
+	// ============================================================
+	t.Run("FetchPM_AuthorSeesMessage", func(t *testing.T) {
+		resp := testutil.DoGet(t, "/api/v1/pm/fetch", authorToken)
+		code := int(resp["code"].(float64))
+		if code != 0 {
+			t.Fatalf("FetchPM failed: code=%d msg=%v", code, resp["msg"])
+		}
+		data := resp["data"].(map[string]interface{})
+		messages := data["messages"].([]interface{})
+		if len(messages) != 3 {
+			t.Fatalf("expected 3 unread messages, got %d", len(messages))
+		}
+		wantContents := map[string]bool{
+			"Hello, I saw your item!":                     false,
+			"Second message via item before reply":        false,
+			"Third message via conversation before reply": false,
+		}
+		for _, raw := range messages {
+			msg := raw.(map[string]interface{})
+			content := msg["content"].(string)
+			seen, expected := wantContents[content]
+			if !expected || seen {
+				t.Fatalf("unexpected or duplicate unread message: %q", content)
+			}
+			wantContents[content] = true
+			if got := msg["conv_id"]; got != convID {
+				t.Fatalf("unread message conv_id=%v, want %s", got, convID)
+			}
+		}
+		msg := messages[0].(map[string]interface{})
+		// Verify agent names are present
+		if msg["sender_name"].(string) != "PM User" {
+			t.Fatalf("expected sender_name='PM User', got %v", msg["sender_name"])
+		}
+		if msg["receiver_name"].(string) != "PM Author" {
+			t.Fatalf("expected receiver_name='PM Author', got %v", msg["receiver_name"])
+		}
+		convID = msg["conv_id"].(string)
+		t.Logf("FetchPM OK: got message in conv_id=%s", convID)
 	})
 
 	// ============================================================
@@ -329,9 +369,9 @@ func TestPMFullFlow(t *testing.T) {
 		}
 		data := resp["data"].(map[string]interface{})
 		messages := data["messages"].([]interface{})
-		// Should have 3 messages: user→author, author→user, user→author
-		if len(messages) != 3 {
-			t.Fatalf("expected 3 messages in history, got %d", len(messages))
+		// Three opening messages, the author reply, and the follow-up.
+		if len(messages) != 5 {
+			t.Fatalf("expected 5 messages in history, got %d", len(messages))
 		}
 		// Verify names on messages
 		for _, m := range messages {

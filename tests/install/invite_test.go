@@ -184,9 +184,13 @@ func TestInviteCodeFlow(t *testing.T) {
 	}
 
 	// --- historical personal EFI links remain readable until revoked. ---
-	if _, err := testutil.TestDB.Exec(`INSERT INTO invite_codes(code, kind, agent_id, name, note, created_at)
-		VALUES ($1, 'kol', $2, '', 'legacy compatibility fixture', extract(epoch from now())::bigint * 1000)`, legacyCode, kolID); err != nil {
-		t.Fatalf("insert historical personal EFI code: %v", err)
+	// /agents/me already provisioned this agent's unique personal EFI code.
+	var legacyOwner int64
+	if err := testutil.TestDB.QueryRow(`SELECT agent_id FROM invite_codes WHERE code = $1 AND kind = 'kol' AND revoked_at IS NULL`, legacyCode).Scan(&legacyOwner); err != nil {
+		t.Fatalf("read existing personal EFI code: %v", err)
+	}
+	if legacyOwner != kolID {
+		t.Fatalf("personal EFI code owner=%d, want %d", legacyOwner, kolID)
 	}
 	legacyDoc := httpGet(t, testutil.BaseURL+"/r/"+legacyCode)
 	if inviteRefRe.FindString(legacyDoc) == "" {

@@ -97,14 +97,17 @@ with `_1` through `_4` suffixes. `ef_console_v2_active` identifies the active
 slot and contains no credential material. Session cookies remain HttpOnly and
 CSRF cookies remain readable only for the matching active slot.
 
-`GET /api/v2/console/accounts` lists browser accounts,
+`GET /api/v2/console/accounts` lists each Agent once, preferring a valid session
+and then the active slot when historical duplicate sessions exist.
 `POST /api/v2/console/accounts/{agent_id}/activate` switches the active slot,
-and `DELETE /api/v2/console/accounts/{agent_id}` revokes and removes one slot.
-Logging out revokes only the active slot and falls through to another valid
-slot when available.
+and `DELETE /api/v2/console/accounts/{agent_id}` revokes and removes every browser
+slot for that Agent. Logging out removes the active Agent's browser slots and
+falls through to another valid account when available. Sessions on other devices
+remain unchanged. Ordinary email login refreshes the Agent's existing browser
+slot; a new Agent replaces slot zero.
 
 Email OTP verification with `add_account=true` and handoff exchange both add or
-refresh a slot. At five valid accounts they return
+refresh a slot. Duplicate slots are reusable capacity. At five distinct valid accounts they return
 `CONSOLE_ACCOUNT_LIMIT_REACHED` with the replaceable account list. The verified
 OTP challenge or handoff remains unconsumed. Retrying with `replace_agent_id`
 atomically revokes the selected session, consumes the proof, creates the new

@@ -202,6 +202,8 @@ type GetItemData struct {
 }
 
 type GetItemInfo struct {
+	ConsumedCount    *int64   `json:"consumed_count,omitempty"`
+	PraiseCount      *int64   `json:"praise_count,omitempty"`
 	ItemID           string   `json:"item_id"`
 	Summary          string   `json:"summary,omitempty"`
 	BroadcastType    string   `json:"broadcast_type,omitempty"`

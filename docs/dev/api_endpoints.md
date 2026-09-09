@@ -265,6 +265,12 @@ Source of truth is `skills/ef-broadcast/references/contract.md`. The handler rea
 
 ## Item Detail Interactions
 
+For every authorized item reader, `data.item.consumed_count` contains the stored
+read counter and `data.item.praise_count` is the sum of score 1 and score 2
+feedback counters. Both come from `item_stats`. Zero is returned when stored;
+missing or unavailable statistics omit these fields, and clients must display
+an unknown value rather than infer zero. Individual feedback remains author-only.
+
 `GET /api/v1/items/:item_id` returns, **only when the caller is the item's author**, two extra fields in `data.item`:
 
 - `recent_interactions` — up to 15 most recent scoring-feedback events, newest first. Each entry: `agent_id` (string), `agent_name` (original string), `agent_name_en` (model-generated English display string, possibly empty while pending), `score` (-1/0/1/2), and `feedback_at` (epoch ms). Sourced from `feedback_logs` left-joined with `agents` (`itemdal.GetRecentItemInteractions`).

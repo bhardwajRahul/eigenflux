@@ -46,6 +46,11 @@ func consoleSessionCookieName(slot int) string { return consoleSlotCookieName(co
 func consoleCSRFCookieName(slot int) string    { return consoleSlotCookieName(csrfCookieName, slot) }
 
 func activeConsoleSlot(c *app.RequestContext) int {
+	if value, ok := c.Get("console_session_slot"); ok {
+		if slot, valid := value.(int); valid && slot >= 0 && slot < maxConsoleAccountSlots {
+			return slot
+		}
+	}
 	slot, err := strconv.Atoi(strings.TrimSpace(string(c.Cookie(activeConsoleSlotCookieName))))
 	if err != nil || slot < 0 || slot >= maxConsoleAccountSlots {
 		return 0
@@ -187,8 +192,85 @@ func (s *Service) consoleAccounts(db *gorm.DB, c *app.RequestContext, now int64)
 			accounts = append(accounts, account)
 		}
 	}
-	sort.SliceStable(accounts, func(i, j int) bool { return accounts[i].LastActiveAt > accounts[j].LastActiveAt })
-	return accounts
+	return uniqueConsoleAccounts(accounts, activeConsoleSlot(c))
+}
+
+func uniqueConsoleAccounts(accounts []consoleAccountView, activeSlot int) []consoleAccountView {
+	unique := make([]consoleAccountView, 0, len(accounts))
+	indices := make(map[string]int, len(accounts))
+	for _, account := range accounts {
+		if index, exists := indices[account.AgentID]; exists {
+			current := unique[index]
+			prefer := current.Expired && !account.Expired
+			if current.Expired == account.Expired {
+				prefer = account.Slot == activeSlot || (current.Slot != activeSlot && account.LastActiveAt > current.LastActiveAt)
+			}
+			if prefer {
+				unique[index] = account
+			}
+			continue
+		}
+		indices[account.AgentID] = len(unique)
+		unique = append(unique, account)
+	}
+	sort.SliceStable(unique, func(i, j int) bool { return unique[i].LastActiveAt > unique[j].LastActiveAt })
+	return unique
+}
+
+func (s *Service) chooseEmailLoginSessionSlot(tx *gorm.DB, c *app.RequestContext, targetAgentID int64) (int, string) {
+	// A normal login refreshes an existing browser identity even when it lives
+	// outside slot zero. New identities retain the slot-zero replacement rule.
+	selectedSlot := 0
+	replacedSessionID := ""
+	for slot := 0; slot < maxConsoleAccountSlots; slot++ {
+		credential, ok := consoleCredential(c, slot)
+		if !ok {
+			continue
+		}
+		session, err := s.loadConsoleSessionCredential(tx, credential)
+		if err != nil {
+			continue
+		}
+		if slot == 0 || session.AgentID == targetAgentID {
+			selectedSlot, replacedSessionID = slot, session.SessionID
+		}
+		if session.AgentID == targetAgentID {
+			break
+		}
+	}
+	return selectedSlot, replacedSessionID
+}
+
+func (s *Service) revokeConsoleAccountSessions(c *app.RequestContext, targetAgentID, now int64) ([]int, error) {
+	slots := make([]int, 0, maxConsoleAccountSlots)
+	err := s.db.Transaction(func(tx *gorm.DB) error {
+		sessionIDs := make([]string, 0, maxConsoleAccountSlots)
+		for slot := 0; slot < maxConsoleAccountSlots; slot++ {
+			credential, ok := consoleCredential(c, slot)
+			if !ok {
+				continue
+			}
+			session, loadErr := s.loadConsoleSessionCredential(tx, credential)
+			if loadErr != nil || session.AgentID != targetAgentID {
+				continue
+			}
+			slots = append(slots, slot)
+			sessionIDs = append(sessionIDs, session.SessionID)
+		}
+		if len(sessionIDs) > 0 {
+			return tx.Exec(`UPDATE console_v2_sessions SET status = 'revoked', revoked_at = ?
+				WHERE session_id IN ? AND status = 'active'`, now, sessionIDs).Error
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, slot := range slots {
+		s.setConsoleCookieAtSlot(c, slot, "", -1)
+		s.setCSRFCookieAtSlot(c, slot, "", -1)
+	}
+	return slots, nil
 }
 
 func parseReplacementAgentID(value string) (int64, error) {
@@ -204,6 +286,9 @@ func parseReplacementAgentID(value string) (int64, error) {
 
 func (s *Service) chooseConsoleSessionSlot(tx *gorm.DB, c *app.RequestContext, targetAgentID, replacementAgentID int64, now int64) (int, string, []consoleAccountView, error) {
 	freeSlot := -1
+	targetSlot, replacementSlot, duplicateSlot := -1, -1, -1
+	targetSessionID, replacementSessionID, duplicateSessionID := "", "", ""
+	seenAgents := make(map[int64]string, maxConsoleAccountSlots)
 	accounts := make([]consoleAccountView, 0, maxConsoleAccountSlots)
 	for slot := 0; slot < maxConsoleAccountSlots; slot++ {
 		credential, ok := consoleCredential(c, slot)
@@ -224,15 +309,35 @@ func (s *Service) chooseConsoleSessionSlot(tx *gorm.DB, c *app.RequestContext, t
 		if accountErr == nil {
 			accounts = append(accounts, account)
 		}
-		if session.AgentID == targetAgentID || (replacementAgentID > 0 && session.AgentID == replacementAgentID) {
-			return slot, session.SessionID, accounts, nil
+		if session.AgentID == targetAgentID && (targetSlot < 0 || slot == activeConsoleSlot(c)) {
+			targetSlot, targetSessionID = slot, session.SessionID
 		}
+		if replacementAgentID > 0 && session.AgentID == replacementAgentID {
+			replacementSlot, replacementSessionID = slot, session.SessionID
+		}
+		if existingSessionID, exists := seenAgents[session.AgentID]; exists && duplicateSlot < 0 {
+			duplicateSlot = slot
+			if existingSessionID != session.SessionID {
+				duplicateSessionID = session.SessionID
+			}
+		}
+		seenAgents[session.AgentID] = session.SessionID
+	}
+	accounts = uniqueConsoleAccounts(accounts, activeConsoleSlot(c))
+	if targetSlot >= 0 {
+		return targetSlot, targetSessionID, accounts, nil
 	}
 	if replacementAgentID > 0 {
+		if replacementSlot >= 0 {
+			return replacementSlot, replacementSessionID, accounts, nil
+		}
 		return 0, "", accounts, errConflict
 	}
 	if freeSlot >= 0 {
 		return freeSlot, "", accounts, nil
+	}
+	if duplicateSlot >= 0 {
+		return duplicateSlot, duplicateSessionID, accounts, nil
 	}
 	return 0, "", accounts, errConsoleAccountLimit
 }
@@ -254,6 +359,8 @@ func (s *Service) activateConsoleAccount(_ context.Context, c *app.RequestContex
 		return
 	}
 	now := time.Now().UnixMilli()
+	selectedSlot := -1
+	var selectedSession consoleSession
 	for slot := 0; slot < maxConsoleAccountSlots; slot++ {
 		credential, ok := consoleCredential(c, slot)
 		if !ok {
@@ -261,10 +368,16 @@ func (s *Service) activateConsoleAccount(_ context.Context, c *app.RequestContex
 		}
 		session, loadErr := s.loadConsoleSessionCredential(s.db, credential)
 		if loadErr == nil && validConsoleSessionAt(session, now) && session.AgentID == targetID {
-			s.setActiveConsoleSlot(c, slot, int(consoleAbsoluteTTL/time.Second))
-			reply(c, http.StatusOK, map[string]interface{}{"activated": true, "agent_id": c.Param("agent_id"), "slot": slot})
-			return
+			if selectedSlot < 0 || slot == activeConsoleSlot(c) ||
+				(selectedSlot != activeConsoleSlot(c) && session.LastSeenAt > selectedSession.LastSeenAt) {
+				selectedSlot, selectedSession = slot, session
+			}
 		}
+	}
+	if selectedSlot >= 0 {
+		s.setActiveConsoleSlot(c, selectedSlot, int(consoleAbsoluteTTL/time.Second))
+		reply(c, http.StatusOK, map[string]interface{}{"activated": true, "agent_id": c.Param("agent_id"), "slot": selectedSlot})
+		return
 	}
 	fail(c, http.StatusNotFound, "CONSOLE_ACCOUNT_NOT_FOUND", "this account is not available in the browser", nil)
 }
@@ -278,22 +391,14 @@ func (s *Service) removeConsoleAccount(_ context.Context, c *app.RequestContext)
 	now := time.Now().UnixMilli()
 	currentAgentID, _ := agentID(c)
 	removedSlot := -1
-	for slot := 0; slot < maxConsoleAccountSlots; slot++ {
-		credential, ok := consoleCredential(c, slot)
-		if !ok {
-			continue
-		}
-		session, loadErr := s.loadConsoleSessionCredential(s.db, credential)
-		if loadErr == nil && session.AgentID == targetID {
-			if err := s.db.Exec(`UPDATE console_v2_sessions SET status = 'revoked', revoked_at = ?
-				WHERE session_id = ? AND status = 'active'`, now, session.SessionID).Error; err != nil {
-				fail(c, http.StatusInternalServerError, "LOGOUT_FAILED", "could not revoke Console V2 session", nil)
-				return
-			}
-			s.setConsoleCookieAtSlot(c, slot, "", -1)
-			s.setCSRFCookieAtSlot(c, slot, "", -1)
+	removedSlots, err := s.revokeConsoleAccountSessions(c, targetID, now)
+	if err != nil {
+		fail(c, http.StatusInternalServerError, "LOGOUT_FAILED", "could not revoke Console V2 session", nil)
+		return
+	}
+	for _, slot := range removedSlots {
+		if removedSlot < 0 || slot == activeConsoleSlot(c) {
 			removedSlot = slot
-			break
 		}
 	}
 	if removedSlot < 0 {

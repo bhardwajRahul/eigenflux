@@ -217,6 +217,11 @@ func (s *Service) deleteConsoleSession(_ context.Context, c *app.RequestContext)
 		return
 	}
 	now := time.Now().UnixMilli()
+	currentAgentID, _ := agentID(c)
+	if _, err := s.revokeConsoleAccountSessions(c, currentAgentID, now); err != nil {
+		fail(c, http.StatusInternalServerError, "LOGOUT_FAILED", "could not revoke Console V2 session", nil)
+		return
+	}
 	if err := s.db.Exec(`UPDATE console_v2_sessions SET status = 'revoked', revoked_at = ?
 		WHERE session_id = ? AND status = 'active'`, now, sessionID).Error; err != nil {
 		fail(c, http.StatusInternalServerError, "LOGOUT_FAILED", "could not revoke Console V2 session", nil)

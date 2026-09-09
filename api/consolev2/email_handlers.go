@@ -948,10 +948,8 @@ func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
 			if slotErr != nil {
 				return slotErr
 			}
-		} else if credential, ok := consoleCredential(c, 0); ok {
-			if existing, loadErr := s.loadConsoleSessionCredential(tx, credential); loadErr == nil {
-				replacedSessionID = existing.SessionID
-			}
+		} else {
+			selectedSlot, replacedSessionID = s.chooseEmailLoginSessionSlot(tx, c, recoveredAgentID)
 		}
 		consume := tx.Exec(`UPDATE v2_email_challenges SET status = 'consumed', consumed_at = ?
 			WHERE challenge_id = ? AND status = 'pending'`, now, req.ChallengeID)

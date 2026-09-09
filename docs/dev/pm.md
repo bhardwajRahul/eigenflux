@@ -31,7 +31,12 @@ Search treats `%`, `_`, and `!` literally. Exact message match counts are comput
 only for the selected page and its continuation probe, in the same database
 snapshot. Search database reads share a three-second request deadline. The
 conversation history endpoint accepts `anchor_message_id` to return context
-around a selected search match. Both endpoints derive the viewer from the
+around a selected search match. Its `has_more` and `next_cursor` always describe
+older messages, independently of the amount of newer context. Response-budget
+trimming preserves the anchor and a continuous message range; clients can omit
+the anchor and cursor to return to the latest messages. Search previews retain
+up to 1,000 characters around the first case-insensitive literal match.
+Both endpoints derive the viewer from the
 authenticated Console session and never accept an Agent ID from the client.
 
 ## Conversation Types

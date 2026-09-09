@@ -186,6 +186,21 @@ func truncateRunes(value string, limit int) (string, bool) {
 	return string(runes[:limit]), true
 }
 
+func communicationSearchPreview(content, query string, limit int) string {
+	runes := []rune(content)
+	if len(runes) <= limit {
+		return content
+	}
+	start := 0
+	lowerContent := strings.ToLower(content)
+	if match := strings.Index(lowerContent, strings.ToLower(query)); match >= 0 {
+		matchStart := utf8.RuneCountInString(lowerContent[:match])
+		start = max(0, matchStart-(limit-utf8.RuneCountInString(query))/2)
+		start = min(start, len(runes)-limit)
+	}
+	return string(runes[start : start+limit])
+}
+
 func boundCommunicationMessage(message *communicationMessage, runeLimit int) {
 	if message == nil {
 		return
@@ -659,7 +674,7 @@ func (s *Service) searchCommunicationMessages(ctx context.Context, c *app.Reques
 	for index := range rows {
 		peerIDs = append(peerIDs, rows[index].PeerAgentID)
 		convIDs = append(convIDs, rows[index].ConvID)
-		rows[index].MatchedPreview, _ = truncateRunes(rows[index].MatchedPreview, 1000)
+		rows[index].MatchedPreview = communicationSearchPreview(rows[index].MatchedPreview, queryText, 1000)
 	}
 	if len(convIDs) > 0 {
 		var unreadRows []struct {
@@ -744,12 +759,13 @@ func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestCon
 		peerID = conversation.ParticipantB
 	}
 	messageSQL := `SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
-		FROM private_messages WHERE conv_id = ? AND (? = 0 OR msg_id < ?)
+		FROM private_messages WHERE conv_id = ? AND (CAST(? AS BIGINT) = 0 OR msg_id < ?)
 		ORDER BY msg_id DESC LIMIT ?`
 	messageArgs := []interface{}{convID, cursor, cursor, limit + 1}
-	if anchor > 0 && cursor == 0 {
-		olderLimit := (limit+1)/2 + 1
-		newerLimit := limit + 1 - olderLimit
+	anchored := anchor > 0 && cursor == 0
+	olderLimit := (limit + 1) / 2
+	if anchored {
+		newerLimit := limit - olderLimit
 		messageSQL = `SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at FROM (
 			SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
 			FROM private_messages WHERE conv_id = ? AND msg_id <= ? ORDER BY msg_id DESC LIMIT ?
@@ -759,7 +775,7 @@ func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestCon
 			SELECT msg_id, conv_id, sender_id, receiver_id, content, is_read, created_at
 			FROM private_messages WHERE conv_id = ? AND msg_id > ? ORDER BY msg_id ASC LIMIT ?
 		) newer ORDER BY msg_id DESC`
-		messageArgs = []interface{}{convID, anchor, olderLimit, convID, anchor, newerLimit}
+		messageArgs = []interface{}{convID, anchor, olderLimit + 1, convID, anchor, newerLimit}
 	}
 	query := s.db.Raw(messageSQL, messageArgs...)
 	var messages []communicationMessage
@@ -768,7 +784,18 @@ func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestCon
 		return
 	}
 	hasMore := len(messages) > limit
-	if hasMore {
+	if anchored {
+		olderCount := 0
+		for _, message := range messages {
+			if message.MsgID <= anchor {
+				olderCount++
+			}
+		}
+		hasMore = olderCount > olderLimit
+		if hasMore {
+			messages = messages[:len(messages)-1]
+		}
+	} else if hasMore {
 		messages = messages[:limit]
 	}
 	for index := range messages {
@@ -793,9 +820,25 @@ func (s *Service) listCommunicationMessages(_ context.Context, c *app.RequestCon
 		"messages": messages, "agent_contexts": contexts, "next_cursor": nextCursor, "has_more": hasMore,
 	}
 	for len(messages) > 1 && !communicationReplyFits(data) {
-		messages = messages[:len(messages)-1]
-		hasMore = true
-		nextCursor = strconv.FormatInt(messages[len(messages)-1].MsgID, 10)
+		anchorIndex := -1
+		if anchored {
+			for index, message := range messages {
+				if message.MsgID == anchor {
+					anchorIndex = index
+					break
+				}
+			}
+		}
+		// Trim only window edges, keeping the anchor and a continuous ID range.
+		if anchorIndex > 0 && anchorIndex >= len(messages)-1-anchorIndex {
+			messages = messages[1:]
+		} else {
+			messages = messages[:len(messages)-1]
+			hasMore = true
+		}
+		if hasMore {
+			nextCursor = strconv.FormatInt(messages[len(messages)-1].MsgID, 10)
+		}
 		data["messages"], data["next_cursor"], data["has_more"] = messages, nextCursor, hasMore
 	}
 	if !communicationReplyFits(data) {

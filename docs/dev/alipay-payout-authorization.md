@@ -10,11 +10,13 @@ All initiator routes use existing Console session auth. POST routes retain Origi
 - Public provider callback: GET `/api/v2/console/alipay/authorization/callback`.
 - Credential-free result page: GET `/api/v2/console/alipay/authorization/result`.
 
-Responses contain `authorization_id`, `status`, RFC3339 `expires_at`, optional `authorization_url` while pending, and `masked_display` after verification. Status values are pending/authorized/rejected/expired/confirmed. Missing retained state returns 410. Another Console session returns 403 even for the same Agent. All responses are private/no-store.
+Responses contain `authorization_id`, `status`, RFC3339 `expires_at`, optional `authorization_url` while pending, and `masked_display` after verification. Status values are pending/authorized/rejected/failed/expired/confirmed. Missing retained state returns 410. Another Console session returns 403 even for the same Agent. All responses are private/no-store.
+
+`failed` means verification could not complete because of a service, configuration, transport, or response-contract error; it does not imply failed real-name verification. Only a provider callback denial/missing code or Commission HTTP 400 `PAYMENT_INVALID_ARGUMENT` is classified as `rejected`. No upstream diagnostics are exposed. Both states are terminal and require a newly initiated attempt, never replay of the consumed callback. Older clients cannot confirm either state; clients should handle unknown statuses without enabling confirmation.
 
 ## Data and security
 
-Existing Redis holds ten-minute attempts. The owner is a hash of authenticated Agent and Console session IDs. Separate random query IDs and callback state prevent QR possession from granting query/confirmation access. Initiation uses atomic idempotency; callback consumes state once, calls Commission's body-bound delegated verification endpoint, and records only an authorized/rejected result. It never invokes Wallet Bind. Provider callback codes are briefly retained server-side, never returned or logged; successful confirmation discards them. Reverse-proxy/access logging must redact callback query parameters, and the callback redirects immediately to a no-referrer result page.
+Existing Redis holds ten-minute attempts. The owner is a hash of authenticated Agent and Console session IDs. Separate random query IDs and callback state prevent QR possession from granting query/confirmation access. Initiation uses atomic idempotency; callback consumes state once, calls Commission's body-bound delegated verification endpoint, and records only an authorized/rejected/failed result. It never invokes Wallet Bind. Provider callback codes are briefly retained server-side only after successful verification, never returned or logged; successful confirmation discards them. Reverse-proxy/access logging must redact callback query parameters, and the callback redirects immediately to a no-referrer result page.
 
 Confirmation uses the attempt's stable server-generated Wallet idempotency key. A malformed Wallet success is not displayed as confirmed. Existing Wallet risk, append-only binding, and cooling invariants apply.
 
@@ -55,7 +57,7 @@ EigenFlux BFF needs `ALIPAY_AUTH_APP_ID`, `ALIPAY_AUTH_CALLBACK_URL` (fixed HTTP
 
 Commission Payment separately needs `ALIPAY_PAYOUT_AUTH_ENABLED=true`, existing Redis configuration, and its existing Alipay credentials. BFF App ID and environment must match Payment. The merchant must enable website user authorization and register the callback domain. The callback and result paths must reach EigenFlux API through the reverse proxy.
 
-Only UID-based certified normal accounts are currently supported; OpenID-only results fail closed. `clear` means approved provider account-state evidence plus separate existing Wallet risk enforcement, not a global fraud guarantee. The production payee resolver remains absent in Commission; do not enable this binding feature for general production use or claim actual withdrawal readiness until that separate gap is resolved.
+Commission verification supports matching UID or application/environment-scoped OpenID evidence, with certification and normal account status required. `clear` means approved provider account-state evidence plus separate existing Wallet risk enforcement, not a global fraud guarantee. The production payee resolver remains absent in Commission; do not enable this binding feature for general production use or claim actual withdrawal readiness until that separate gap is resolved.
 
 ## Verification
 

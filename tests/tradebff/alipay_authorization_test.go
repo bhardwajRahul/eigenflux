@@ -12,6 +12,7 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -25,6 +26,102 @@ import (
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
+
+func TestAlipayAuthorizationVerificationOutcomes(t *testing.T) {
+	for _, tc := range []struct {
+		name, payload, query, want string
+		status                     int
+		transportFailure           bool
+	}{
+		{name: "disabled", status: 501, payload: `{"code":501,"error_code":"PAYMENT_UNSUPPORTED","msg":"private-diagnostic"}`, want: "failed"},
+		{name: "upstream unavailable", status: 503, payload: `{"code":503}`, want: "failed"},
+		{name: "delegation denied", status: 403, payload: `{"code":403,"error_code":"AUTH_FORBIDDEN"}`, want: "failed"},
+		{name: "rate limited", status: 429, payload: `{"code":429}`, want: "failed"},
+		{name: "unclassified bad request", status: 400, payload: `{"code":400}`, want: "failed"},
+		{name: "transport", transportFailure: true, want: "failed"},
+		{name: "invalid JSON", status: 200, payload: `not-json`, want: "failed"},
+		{name: "missing account", status: 200, payload: `{"code":0,"data":{}}`, want: "failed"},
+		{name: "verification denied", status: 400, payload: `{"code":400,"error_code":"PAYMENT_INVALID_ARGUMENT","msg":"private-diagnostic"}`, want: "rejected"},
+		{name: "provider denied", query: "&error=access_denied", want: "rejected"},
+		{name: "authorized", status: 200, payload: `{"code":0,"data":{"masked_display":"****9012"}}`, want: "authorized"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			var verifies atomic.Int32
+			upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				require.Equal(t, "/api/v1/wallet/alipay/authorization/verify", r.URL.Path)
+				verifies.Add(1)
+				if tc.transportFailure {
+					conn, _, err := w.(http.Hijacker).Hijack()
+					require.NoError(t, err)
+					conn.Close()
+					return
+				}
+				w.WriteHeader(tc.status)
+				io.WriteString(w, tc.payload)
+			}))
+			defer upstream.Close()
+			_, private, err := ed25519.GenerateKey(rand.Reader)
+			require.NoError(t, err)
+			trade, err := tradebff.New(tradebff.Config{Endpoint: upstream.URL, DelegationKeyID: "test", DelegationPrivateKey: base64.RawURLEncoding.EncodeToString(private)})
+			require.NoError(t, err)
+			r := miniredis.RunT(t)
+			rdb := redis.NewClient(&redis.Options{Addr: r.Addr()})
+			defer rdb.Close()
+			auth := tradebff.NewAlipayAuthorization(trade, rdb, tradebff.AlipayAuthorizationConfig{AppID: "2026090800000001", CallbackURL: "https://console.example" + tradebff.AlipayAuthorizationCallbackPath, Production: true})
+			h := server.New()
+			identity := func(ctx context.Context, c *app.RequestContext) {
+				c.Set("agent_id", int64(42))
+				c.Set("console_session_id", "owner")
+				c.Next(ctx)
+			}
+			h.POST("/start", identity, auth.Start)
+			h.GET("/status/:authorization_id", identity, auth.Status)
+			h.POST("/confirm/:authorization_id", identity, auth.Confirm)
+			h.GET("/callback", auth.Callback)
+			startBody := `{"expected_agent_id":"42"}`
+			start := ut.PerformRequest(h.Engine, "POST", "/start", &ut.Body{Body: strings.NewReader(startBody), Len: len(startBody)}, ut.Header{Key: "Idempotency-Key", Value: "start"}).Result()
+			require.Equal(t, 200, start.StatusCode())
+			var response struct {
+				Data struct {
+					ID     string `json:"authorization_id"`
+					URL    string `json:"authorization_url"`
+					Status string `json:"status"`
+				}
+			}
+			require.NoError(t, json.Unmarshal(start.Body(), &response))
+			u, err := url.Parse(response.Data.URL)
+			require.NoError(t, err)
+			state := u.Query().Get("state")
+			callback := "/callback?state=" + state + "&auth_code=private-code" + tc.query
+			for i := 0; i < 2; i++ {
+				result := ut.PerformRequest(h.Engine, "GET", callback, nil).Result()
+				require.Equal(t, 303, result.StatusCode())
+				require.Equal(t, tradebff.AlipayAuthorizationResultPath, string(result.Header.Peek("Location")))
+			}
+			wantCalls := int32(1)
+			if tc.query != "" {
+				wantCalls = 0
+			}
+			require.Equal(t, wantCalls, verifies.Load(), "callback state must be consumed once")
+			result := ut.PerformRequest(h.Engine, "GET", "/status/"+response.Data.ID, nil).Result()
+			require.Equal(t, 200, result.StatusCode())
+			require.NoError(t, json.Unmarshal(result.Body(), &response))
+			require.Equal(t, tc.want, response.Data.Status)
+			for _, secret := range []string{"private-code", "private-diagnostic", state, "PAYMENT_UNSUPPORTED"} {
+				require.NotContains(t, string(result.Body()), secret)
+			}
+			if tc.want != "authorized" {
+				confirm := ut.PerformRequest(h.Engine, "POST", "/confirm/"+response.Data.ID, nil, ut.Header{Key: "Idempotency-Key", Value: "confirm"}).Result()
+				require.Equal(t, 409, confirm.StatusCode())
+				for _, key := range r.Keys() {
+					value, _ := r.Get(key)
+					require.NotContains(t, value, "private-code")
+					require.NotContains(t, value, "private-diagnostic")
+				}
+			}
+		})
+	}
+}
 
 func TestAlipayAuthorizationCrossDeviceAndExplicitConfirmation(t *testing.T) {
 	var verifies, binds int

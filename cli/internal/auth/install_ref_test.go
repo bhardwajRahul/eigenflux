@@ -3,6 +3,7 @@ package auth_test
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"testing"
 
 	"cli.eigenflux.ai/internal/auth"
@@ -18,7 +19,10 @@ func TestInstallRefSurvivesProvisionAndReinstall(t *testing.T) {
 	}
 	path := filepath.Join(config.HomeDir(), "servers", server.Name, "install-ref.json")
 	info, err := os.Stat(path)
-	if err != nil || info.Mode().Perm() != 0o600 {
+	if err != nil {
+		t.Fatalf("stat ref file: %v", err)
+	}
+	if runtime.GOOS != "windows" && info.Mode().Perm() != 0o600 {
 		t.Fatalf("ref file permissions: info=%v err=%v", info, err)
 	}
 	if err := auth.SaveV2Credentials(server.Name, &auth.V2Credentials{AgentID: "42", AccessToken: "access", RefreshToken: "refresh"}); err != nil {

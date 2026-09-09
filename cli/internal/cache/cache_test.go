@@ -30,7 +30,7 @@ func TestSaveFeedResponse(t *testing.T) {
 	dir := t.TempDir()
 	dir = setHomeDir(t, dir)
 
-	rawData := json.RawMessage(`{"items":[{"id":"1","title":"test"}]}`)
+	rawData := json.RawMessage(`{"items":[{"item_id":"1","summary":"test"}]}`)
 	SaveFeedResponse("testserver", rawData)
 
 	today := time.Now().Format(dateFormat)

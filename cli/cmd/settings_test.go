@@ -130,8 +130,8 @@ type heartbeatCompatibilityReportForTest struct {
 	Revision string `json:"skill_revision"`
 }
 
-// TestSyncedSettingsBody_OtherKeysUnaffected confirms the intent guard is scoped
-// to feed_poll_interval and leaves the other synced keys behaving as before.
+// Generic settings sync excludes versioned security boundary fields while
+// retaining language and feed delivery preferences.
 func TestSyncedSettingsBodyExcludesVersionedSecurityBoundary(t *testing.T) {
 	cfg := &config.Config{KV: map[string]string{
 		"recurring_publish":        "true",

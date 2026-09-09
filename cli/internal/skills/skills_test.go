@@ -337,7 +337,7 @@ func serveBundleAtSequence(t *testing.T, version, src string, names []string, se
 	return srv, m
 }
 
-func TestSyncIfStaleSkipsNetwork(t *testing.T) {
+func TestSyncIfStaleKeepsLocalWhenManifestUnavailable(t *testing.T) {
 	dst := filepath.Join(t.TempDir(), "skills")
 	src := stageSkills(t, map[string]map[string]string{"ef-broadcast": {"SKILL.md": "b"}})
 	names := []string{"ef-broadcast"}
@@ -345,15 +345,68 @@ func TestSyncIfStaleSkipsNetwork(t *testing.T) {
 	if _, err := Sync(syncOpts(dst, "0.0.16", srv.URL, names)); err != nil {
 		t.Fatal(err)
 	}
-	// Point at a dead server; --if-stale with matching version must not hit it.
-	o := syncOpts(dst, "0.0.16", "http://127.0.0.1:1", names)
+	manifestBefore, err := os.ReadFile(filepath.Join(dst, ManifestFileName))
+	if err != nil {
+		t.Fatal(err)
+	}
+	// A failed manifest fetch must preserve the installed copy without failing
+	// a background freshness check.
+	srv.Close()
+	o := syncOpts(dst, "0.0.16", srv.URL, names)
 	o.IfStale = true
 	res, err := Sync(o)
 	if err != nil {
 		t.Fatalf("if-stale should be offline-safe: %v", err)
 	}
-	if res.Source != "local" {
-		t.Fatalf("expected local short-circuit, got %s", res.Source)
+	if res == nil || res.Source != "local" || !res.NoNetwork || res.VerifiedManifest {
+		t.Fatalf("expected local fallback after failed manifest fetch, got %+v", res)
+	}
+	content, err := os.ReadFile(filepath.Join(dst, "ef-broadcast", "SKILL.md"))
+	if err != nil || string(content) != "b" {
+		t.Fatalf("installed Skill changed during offline fallback: %q, %v", content, err)
+	}
+	manifestAfter, err := os.ReadFile(filepath.Join(dst, ManifestFileName))
+	if err != nil || !bytes.Equal(manifestBefore, manifestAfter) {
+		t.Fatalf("installed manifest changed during offline fallback: %s, %v", manifestAfter, err)
+	}
+}
+
+func TestSyncIfStaleFetchesManifestWithoutDownloadingUnchangedBundle(t *testing.T) {
+	dst := filepath.Join(t.TempDir(), "skills")
+	src := stageSkills(t, map[string]map[string]string{"ef-broadcast": {"SKILL.md": "b"}})
+	names := []string{"ef-broadcast"}
+	bundleServer, _ := serveBundle(t, "0.0.16", src, names)
+	var manifestRequests, tarballRequests atomic.Int64
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch filepath.Base(r.URL.Path) {
+		case RemoteManifest:
+			manifestRequests.Add(1)
+		case TarName:
+			tarballRequests.Add(1)
+		default:
+			t.Errorf("unexpected request: %s %s", r.Method, r.URL.Path)
+		}
+		bundleServer.Config.Handler.ServeHTTP(w, r)
+	}))
+	t.Cleanup(srv.Close)
+	o := syncOpts(dst, "0.0.16", srv.URL, names)
+	if _, err := Sync(o); err != nil {
+		t.Fatal(err)
+	}
+	if manifests, tarballs := manifestRequests.Swap(0), tarballRequests.Swap(0); manifests != 1 || tarballs != 1 {
+		t.Fatalf("initial install requests: manifest=%d, tarball=%d; want 1 each", manifests, tarballs)
+	}
+
+	o.IfStale = true
+	res, err := Sync(o)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if res == nil || res.Source != "local" || !res.VerifiedManifest || res.NoNetwork {
+		t.Fatalf("expected verified, unchanged local bundle, got %+v", res)
+	}
+	if manifests, tarballs := manifestRequests.Load(), tarballRequests.Load(); manifests != 1 || tarballs != 0 {
+		t.Fatalf("freshness check requests: manifest=%d, tarball=%d; want 1 manifest and no tarball", manifests, tarballs)
 	}
 }
 

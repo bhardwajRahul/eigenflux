@@ -140,9 +140,9 @@ func TestRanker_EmptyCandidates(t *testing.T) {
 
 func TestRankWithCustomTime(t *testing.T) {
 	cfg := &RankerConfig{
-		Alpha: 0.0, Beta: 0.0, Gamma: 1.0, Delta: 0.0,
+		Alpha: 0.0, Beta: 1.0, Gamma: 1.0, Delta: 0.0,
 		Freshness: map[string]FreshnessParams{
-			"info": {Offset: 12 * time.Hour, Scale: 7 * 24 * time.Hour, Decay: 0.8},
+			"info": {Offset: 12 * time.Hour, Scale: 24 * time.Hour, Decay: 0.5},
 		},
 		DraftDampening: 0.8,
 	}
@@ -150,17 +150,31 @@ func TestRankWithCustomTime(t *testing.T) {
 
 	now := time.Date(2026, 4, 15, 10, 0, 0, 0, time.UTC)
 	candidates := []sortDal.Item{
+		// Put the older item first so an unscored tie cannot pass the ordering assertion.
+		{ID: 2, Type: "info", Keywords: []string{"go"}, UpdatedAt: now.Add(-36 * time.Hour)},
 		{ID: 1, Type: "info", Keywords: []string{"go"}, UpdatedAt: now.Add(-1 * time.Hour)},
-		{ID: 2, Type: "info", Keywords: []string{"go"}, UpdatedAt: now.Add(-48 * time.Hour)},
 	}
 	profile := &UserProfile{Keywords: []string{"go"}}
 
 	ranked := r.RankAt(candidates, profile, 2, now)
 
-	if len(ranked) != 2 {
-		t.Fatalf("expected 2 ranked items, got %d", len(ranked))
+	require.Len(t, ranked, 2)
+	require.Equal(t, int64(1), ranked[0].ItemID)
+	require.Equal(t, int64(2), ranked[1].ItemID)
+	assert.InDelta(t, 1.0, ranked[0].Score, 1e-9, "within the freshness offset")
+	assert.InDelta(t, 0.5, ranked[1].Score, 1e-9, "one scale beyond the offset")
+	for _, result := range ranked {
+		assert.Equal(t, 1.0, result.Scores.Keyword)
+		assert.InDelta(t, result.Scores.Freshness, result.Score, 1e-9)
+		assert.InDelta(t, result.Scores.Total, result.Score, 1e-9)
 	}
-	if ranked[0].ItemID != 1 {
-		t.Errorf("expected item 1 ranked first (fresher), got item %d", ranked[0].ItemID)
+
+	later := r.RankAt(candidates, profile, 2, now.Add(24*time.Hour))
+	require.Len(t, later, 2)
+	for i, result := range later {
+		require.Equal(t, ranked[i].ItemID, result.ItemID)
+		assert.Greater(t, result.Score, 0.0)
+		assert.Less(t, result.Score, ranked[i].Score, "advancing the supplied time must decay the score")
 	}
+	assert.InDelta(t, 0.0625, later[1].Score, 1e-9, "two scales beyond the offset: 0.5^4")
 }

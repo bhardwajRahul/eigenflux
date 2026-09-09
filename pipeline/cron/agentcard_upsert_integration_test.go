@@ -7,6 +7,8 @@ import (
 
 	"eigenflux_server/pkg/agentcard"
 	profiledal "eigenflux_server/rpc/profile/dal"
+	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/stretchr/testify/require"
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
 )
@@ -252,11 +254,28 @@ func TestRollingDeploymentFenceTrigger(t *testing.T) {
 	if err := profiledal.UpsertAgentCardWithFence(tx, agentID, `{"v":2}`, `{}`, 1, 1, 1); err != nil {
 		t.Fatal(err)
 	}
-	if err := tx.Exec(`UPDATE agent_cards SET card_version=card_version+1,generated_at=3 WHERE agent_id=?`, agentID).Error; err == nil {
-		t.Fatal("post-fence legacy metadata write was accepted")
-	}
-	if err := tx.Exec(`UPDATE agent_cards SET public_card='{"legacy":true}',source_version=source_version+1,card_version=card_version+1,generated_at=4 WHERE agent_id=?`, agentID).Error; err == nil {
-		t.Fatal("post-fence legacy writer bypassed the fence with a newer source_version")
+	before, err := profiledal.GetAgentCard(tx, agentID)
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name string
+		sql  string
+	}{
+		{"metadata_only", `UPDATE agent_cards SET card_version=card_version+1,generated_at=3 WHERE agent_id=?`},
+		{"newer_source", `UPDATE agent_cards SET public_card='{"legacy":true}',source_version=source_version+1,card_version=card_version+1,generated_at=4 WHERE agent_id=?`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.NoError(t, tx.Exec("SAVEPOINT legacy_writer").Error)
+			err := tx.Exec(tc.sql, agentID).Error
+			// Recover the transaction before the next case, even if this assertion fails.
+			require.NoError(t, tx.Exec("ROLLBACK TO SAVEPOINT legacy_writer").Error)
+			require.NoError(t, tx.Exec("RELEASE SAVEPOINT legacy_writer").Error)
+			var pgErr *pgconn.PgError
+			require.ErrorAs(t, err, &pgErr, "legacy write must be rejected by the fence trigger")
+			require.Equal(t, "40001", pgErr.Code, "an aborted transaction (25P02) is not a fence rejection")
+			after, err := profiledal.GetAgentCard(tx, agentID)
+			require.NoError(t, err)
+			require.Equal(t, before, after, "rejected writer must leave the projection unchanged")
+		})
 	}
 }
 

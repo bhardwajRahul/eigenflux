@@ -14,5 +14,4 @@ CREATE INDEX CONCURRENTLY IF NOT EXISTS idx_agents_agent_name_en_trgm
 -- +goose Down
 -- +goose NO TRANSACTION
 DROP INDEX CONCURRENTLY IF EXISTS idx_agents_agent_name_en_trgm;
-DROP INDEX CONCURRENTLY IF EXISTS idx_agents_agent_name_trgm;
 DROP INDEX CONCURRENTLY IF EXISTS idx_private_messages_content_trgm;

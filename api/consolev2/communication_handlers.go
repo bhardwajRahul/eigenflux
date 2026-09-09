@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"strconv"
 	"strings"
+	"time"
 	"unicode/utf8"
 
 	"github.com/cloudwego/hertz/pkg/app"
@@ -19,9 +20,10 @@ import (
 )
 
 const (
-	communicationDefaultLimit = 20
-	communicationMaxLimit     = 50
-	communicationMaxReplySize = 256 << 10
+	communicationDefaultLimit  = 20
+	communicationMaxLimit      = 50
+	communicationMaxReplySize  = 256 << 10
+	communicationSearchTimeout = 3 * time.Second
 )
 
 type communicationCardSummary struct {
@@ -82,8 +84,11 @@ type communicationSearchCursor struct {
 	ConvID    int64 `json:"c"`
 }
 
+// CommunicationSearchConversation makes the embedded fields visible to GORM.
+type CommunicationSearchConversation = communicationConversation
+
 type communicationSearchResult struct {
-	communicationConversation
+	CommunicationSearchConversation
 	MatchedBy      string `gorm:"column:matched_by" json:"matched_by"`
 	Remark         string `gorm:"column:remark" json:"remark,omitempty"`
 	MatchedMsgID   int64  `gorm:"column:matched_message_id" json:"matched_message_id,string"`
@@ -545,7 +550,9 @@ func (s *Service) loadViewerRelations(viewerID int64, peerIDs []int64) (map[int6
 	return result, nil
 }
 
-func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestContext) {
+func (s *Service) searchCommunicationMessages(ctx context.Context, c *app.RequestContext) {
+	ctx, cancel := context.WithTimeout(ctx, communicationSearchTimeout)
+	defer cancel()
 	viewerID, _ := agentID(c)
 	limit, err := parseCommunicationLimit(c)
 	if err != nil {
@@ -562,8 +569,18 @@ func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestC
 		fail(c, http.StatusBadRequest, "INVALID_CURSOR", err.Error(), nil)
 		return
 	}
-	pattern := "%" + queryText + "%"
-	prefix := queryText + "%"
+	// These search reads share one deadline without copying Service's locks.
+	s = &Service{db: s.db.WithContext(ctx)}
+	searchFail := func(code, message string) {
+		if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			fail(c, http.StatusGatewayTimeout, "MESSAGE_SEARCH_TIMEOUT", "message search timed out", nil)
+			return
+		}
+		fail(c, http.StatusInternalServerError, code, message, nil)
+	}
+	escaped := strings.NewReplacer("!", "!!", "%", "!%", "_", "!_").Replace(queryText)
+	pattern := "%" + escaped + "%"
+	prefix := escaped + "%"
 	cursorFilter := ""
 	cursorArgs := []interface{}{}
 	if cursor.MatchedAt > 0 {
@@ -580,34 +597,42 @@ func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestC
 			CASE e.topic_status WHEN 0 THEN 'pending_verify' WHEN 2 THEN 'closed' ELSE 'open' END AS topic_status,
 			e.peer_agent_id,
 			CASE WHEN lower(COALESCE(a.agent_name, '')) = lower(?) OR lower(COALESCE(a.agent_name_en, '')) = lower(?) OR lower(COALESCE(a.short_id, '')) = lower(?) THEN 0
-				 WHEN COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ? OR COALESCE(a.short_id, '') ILIKE ? THEN 1
-				 WHEN COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ? OR COALESCE(a.short_id, '') ILIKE ? THEN 2
-				 WHEN COALESCE(ur.remark, '') ILIKE ? THEN 3 ELSE 4 END AS match_rank,
-			CASE WHEN COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ? OR COALESCE(a.short_id, '') ILIKE ? THEN 'agent_name'
-				 WHEN COALESCE(ur.remark, '') ILIKE ? THEN 'remark' ELSE 'message' END AS matched_by,
+				 WHEN COALESCE(a.agent_name, '') ILIKE ? ESCAPE '!' OR COALESCE(a.agent_name_en, '') ILIKE ? ESCAPE '!' OR COALESCE(a.short_id, '') ILIKE ? ESCAPE '!' THEN 1
+				 WHEN COALESCE(a.agent_name, '') ILIKE ? ESCAPE '!' OR COALESCE(a.agent_name_en, '') ILIKE ? ESCAPE '!' OR COALESCE(a.short_id, '') ILIKE ? ESCAPE '!' THEN 2
+				 WHEN COALESCE(ur.remark, '') ILIKE ? ESCAPE '!' THEN 3 ELSE 4 END AS match_rank,
+			CASE WHEN COALESCE(a.agent_name, '') ILIKE ? ESCAPE '!' OR COALESCE(a.agent_name_en, '') ILIKE ? ESCAPE '!' OR COALESCE(a.short_id, '') ILIKE ? ESCAPE '!' THEN 'agent_name'
+				 WHEN COALESCE(ur.remark, '') ILIKE ? ESCAPE '!' THEN 'remark' ELSE 'message' END AS matched_by,
 			COALESCE(ur.remark, '') AS remark,
 			COALESCE(mm.msg_id, lm.msg_id) AS matched_message_id,
 			COALESCE(mm.sender_id, lm.sender_id) AS matched_sender_id,
 			COALESCE(mm.content, lm.content, '') AS matched_message_preview,
-			COALESCE(mm.created_at, lm.created_at, e.updated_at) AS matched_at,
-			CASE WHEN mm.msg_id IS NOT NULL THEN mm.match_count ELSE 0 END AS match_count
+			COALESCE(mm.created_at, lm.created_at, e.updated_at) AS matched_at
 		FROM eligible e
 		LEFT JOIN agents a ON a.agent_id = e.peer_agent_id
 		LEFT JOIN user_relations ur ON ur.from_uid = ? AND ur.to_uid = e.peer_agent_id AND ur.rel_type = 1
 		LEFT JOIN LATERAL (
-			SELECT pm.msg_id, pm.sender_id, pm.content, pm.created_at, COUNT(*) OVER () AS match_count
-			FROM private_messages pm WHERE pm.conv_id = e.conv_id AND pm.content ILIKE ?
+			SELECT pm.msg_id, pm.sender_id, pm.content, pm.created_at
+			FROM private_messages pm WHERE pm.conv_id = e.conv_id AND pm.content ILIKE ? ESCAPE '!'
 			ORDER BY pm.msg_id DESC LIMIT 1
 		) mm ON TRUE
 		LEFT JOIN LATERAL (
 			SELECT pm.msg_id, pm.sender_id, pm.content, pm.created_at FROM private_messages pm
 			WHERE pm.conv_id = e.conv_id ORDER BY pm.msg_id DESC LIMIT 1
 		) lm ON TRUE
-		WHERE COALESCE(a.agent_name, '') ILIKE ? OR COALESCE(a.agent_name_en, '') ILIKE ?
-			OR COALESCE(a.short_id, '') ILIKE ? OR COALESCE(ur.remark, '') ILIKE ? OR mm.msg_id IS NOT NULL
+		WHERE COALESCE(a.agent_name, '') ILIKE ? ESCAPE '!' OR COALESCE(a.agent_name_en, '') ILIKE ? ESCAPE '!'
+			OR COALESCE(a.short_id, '') ILIKE ? ESCAPE '!' OR COALESCE(ur.remark, '') ILIKE ? ESCAPE '!' OR mm.msg_id IS NOT NULL
+	), page AS MATERIALIZED (
+		SELECT * FROM candidates ` + cursorFilter + `
+		ORDER BY match_rank ASC, matched_at DESC, conv_id DESC LIMIT ?
+	), match_counts AS (
+		SELECT pm.conv_id, COUNT(*) AS match_count
+		FROM private_messages pm JOIN page ON page.conv_id = pm.conv_id
+		WHERE pm.content ILIKE ? ESCAPE '!'
+		GROUP BY pm.conv_id
 	)
-	SELECT * FROM candidates ` + cursorFilter + `
-	ORDER BY match_rank ASC, matched_at DESC, conv_id DESC LIMIT ?`
+	SELECT page.*, COALESCE(mc.match_count, 0) AS match_count
+	FROM page LEFT JOIN match_counts mc ON mc.conv_id = page.conv_id
+	ORDER BY page.match_rank ASC, page.matched_at DESC, page.conv_id DESC`
 	args := []interface{}{viewerID, viewerID, viewerID,
 		queryText, queryText, queryText,
 		prefix, prefix, prefix,
@@ -619,10 +644,10 @@ func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestC
 		pattern,
 		pattern, pattern, pattern, pattern}
 	args = append(args, cursorArgs...)
-	args = append(args, limit+1)
-	var rows []communicationSearchResult
+	args = append(args, limit+1, pattern)
+	rows := make([]communicationSearchResult, 0)
 	if err := s.db.Raw(sql, args...).Scan(&rows).Error; err != nil {
-		fail(c, http.StatusInternalServerError, "MESSAGE_SEARCH_FAILED", "could not search messages", nil)
+		searchFail("MESSAGE_SEARCH_FAILED", "could not search messages")
 		return
 	}
 	hasMore := len(rows) > limit
@@ -643,7 +668,7 @@ func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestC
 		}
 		if err := s.db.Raw(`SELECT conv_id, COUNT(*) AS count FROM private_messages
 			WHERE conv_id = ANY(?) AND receiver_id = ? AND is_read = false GROUP BY conv_id`, pq.Array(convIDs), viewerID).Scan(&unreadRows).Error; err != nil {
-			fail(c, http.StatusInternalServerError, "MESSAGE_SEARCH_FAILED", "could not read unread counts", nil)
+			searchFail("MESSAGE_SEARCH_FAILED", "could not read unread counts")
 			return
 		}
 		unreadByConversation := make(map[int64]int64, len(unreadRows))
@@ -656,12 +681,12 @@ func (s *Service) searchCommunicationMessages(_ context.Context, c *app.RequestC
 	}
 	relations, err := s.loadViewerRelations(viewerID, peerIDs)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "MESSAGE_SEARCH_FAILED", "could not read relationship state", nil)
+		searchFail("MESSAGE_SEARCH_FAILED", "could not read relationship state")
 		return
 	}
 	contexts, err := s.loadCommunicationContexts(viewerID, peerIDs, relations)
 	if err != nil {
-		fail(c, http.StatusInternalServerError, "IDENTITY_READ_FAILED", "could not resolve Agent identities", nil)
+		searchFail("IDENTITY_READ_FAILED", "could not resolve Agent identities")
 		return
 	}
 	for index := range rows {

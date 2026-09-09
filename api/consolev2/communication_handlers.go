@@ -309,6 +309,18 @@ func (s *Service) listCommunicationConversations(_ context.Context, c *app.Reque
 		fail(c, http.StatusBadRequest, "INVALID_ORIGIN_TYPE", "origin_type must be friend, broadcast or unbroken", nil)
 		return
 	}
+	var originID int64
+	if rawOriginID := c.Query("origin_id"); rawOriginID != "" {
+		originID, err = strconv.ParseInt(rawOriginID, 10, 64)
+		if err != nil || originID <= 0 {
+			fail(c, http.StatusBadRequest, "INVALID_ORIGIN_ID", "origin_id must be a positive integer", nil)
+			return
+		}
+		if originType != "broadcast" {
+			fail(c, http.StatusBadRequest, "INVALID_ORIGIN_TYPE", "origin_id requires origin_type=broadcast", nil)
+			return
+		}
+	}
 	sortBy := strings.TrimSpace(c.Query("sort"))
 	if sortBy == "" {
 		sortBy = "recent"
@@ -338,6 +350,9 @@ func (s *Service) listCommunicationConversations(_ context.Context, c *app.Reque
 		if originType != "" && originType != "unbroken" {
 			args = append(args, originType)
 		}
+		if originID > 0 {
+			args = append(args, originID)
+		}
 		args = append(args, limit+1)
 		return args
 	}
@@ -350,6 +365,9 @@ func (s *Service) listCommunicationConversations(_ context.Context, c *app.Reque
 	}
 	if originType != "" && originType != "unbroken" {
 		filter += " AND origin_type = ?"
+	}
+	if originID > 0 {
+		filter += " AND origin_id = ?"
 	}
 	baseCondition := "status = 0 AND msg_count >= 1"
 	if originType == "unbroken" {

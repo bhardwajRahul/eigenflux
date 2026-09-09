@@ -25,6 +25,13 @@ const payoutAuthorizationPrefix = "console:alipay:authorization:"
 // The stock HTTP tracer records the full URL. This callback carries a one-use
 // credential and must not enter that tracer (proxy logs need equivalent redaction).
 func IgnoreAlipayAuthorizationTrace(_ context.Context, c *app.RequestContext) bool {
+	// Tracer.Start runs before Hertz reads the request headers. Parsing URI
+	// there makes the HTTP/1 server reject every request as a lifecycle race.
+	// Start only creates a carrier; middleware/Finish run after URI parsing
+	// and exclude the callback before any URL-bearing span is created.
+	if !c.Request.IsURIParsed() {
+		return false
+	}
 	return string(c.Path()) == AlipayAuthorizationCallbackPath
 }
 

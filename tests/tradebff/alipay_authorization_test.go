@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -19,6 +20,8 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 	"github.com/cloudwego/hertz/pkg/common/ut"
+	"github.com/cloudwego/hertz/pkg/network/standard"
+	hertztracing "github.com/hertz-contrib/obs-opentelemetry/tracing"
 	"github.com/redis/go-redis/v9"
 	"github.com/stretchr/testify/require"
 )
@@ -147,6 +150,33 @@ func TestAlipayAuthorizationCrossDeviceAndExplicitConfirmation(t *testing.T) {
 	require.Equal(t, 410, status)
 }
 
+func TestAlipayTraceRealHTTPPreservesRequestLifecycle(t *testing.T) {
+	ln, err := net.Listen("tcp", "127.0.0.1:0")
+	require.NoError(t, err)
+	defer ln.Close()
+	tracer, cfg := hertztracing.NewServerTracer(hertztracing.WithShouldIgnore(tradebff.IgnoreAlipayAuthorizationTrace))
+	h := server.New(server.WithListener(ln), server.WithTransport(standard.NewTransporter), tracer)
+	h.Use(hertztracing.ServerMiddleware(cfg))
+	for _, route := range []string{"/ordinary", tradebff.AlipayAuthorizationCallbackPath} {
+		h.GET(route, func(_ context.Context, c *app.RequestContext) { c.String(200, "ok") })
+	}
+	done := make(chan error, 1)
+	go func() { done <- h.Run() }()
+	defer func() { h.Engine.Close(); <-done }()
+	require.Eventually(t, h.IsRunning, 3*time.Second, 10*time.Millisecond)
+	client := &http.Client{Timeout: 2 * time.Second}
+	defer client.CloseIdleConnections()
+	for _, route := range []string{"/ordinary", tradebff.AlipayAuthorizationCallbackPath + "?auth_code=fixture", "/ordinary"} {
+		res, err := client.Get("http://" + ln.Addr().String() + route)
+		require.NoError(t, err)
+		body, err := io.ReadAll(res.Body)
+		res.Body.Close()
+		require.NoError(t, err)
+		require.Equal(t, 200, res.StatusCode)
+		require.Equal(t, "ok", string(body))
+	}
+}
+
 func TestAlipayAuthorizationUnavailableConfiguration(t *testing.T) {
 	var auth *tradebff.AlipayAuthorization
 	c := app.NewContext(0)
@@ -156,7 +186,13 @@ func TestAlipayAuthorizationUnavailableConfiguration(t *testing.T) {
 	require.Equal(t, 503, c.Response.StatusCode())
 	require.Nil(t, tradebff.NewAlipayAuthorization(nil, nil, tradebff.AlipayAuthorizationConfig{}))
 	c.Request.SetRequestURI(tradebff.AlipayAuthorizationCallbackPath + "?auth_code=private-code&state=private-state")
+	require.False(t, tradebff.IgnoreAlipayAuthorizationTrace(context.Background(), c))
+	require.False(t, c.Request.IsURIParsed(), "tracer Start must not parse request URI")
+	c.Request.URI() // Hertz parses URI before invoking middleware.
 	require.True(t, tradebff.IgnoreAlipayAuthorizationTrace(context.Background(), c))
 	c.Request.SetRequestURI("/api/v2/console/bff/trade/overview")
+	require.False(t, tradebff.IgnoreAlipayAuthorizationTrace(context.Background(), c))
+	require.False(t, c.Request.IsURIParsed())
+	c.Request.URI()
 	require.False(t, tradebff.IgnoreAlipayAuthorizationTrace(context.Background(), c))
 }

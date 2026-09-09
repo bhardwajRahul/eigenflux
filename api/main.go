@@ -254,7 +254,7 @@ func main() {
 
 	// Init Hertz
 	listenAddr := cfg.ListenAddr(cfg.ApiPort)
-	tracer, tracerCfg := hertztracing.NewServerTracer()
+	tracer, tracerCfg := hertztracing.NewServerTracer(hertztracing.WithShouldIgnore(tradebff.IgnoreAlipayAuthorizationTrace))
 	h := server.Default(
 		server.WithHostPorts(listenAddr),
 		tracer,
@@ -434,6 +434,12 @@ func registerConsoleV2BusinessBFF(h *server.Hertz, service *consolev2.Service, c
 	read("earnings/summary", trade.EarningsSummary)
 	read("earnings/records", trade.EarningsRecords)
 	read("payout-method", trade.PayoutMethod)
+	authorization := tradebff.NewAlipayAuthorization(trade, mq.RDB, tradebff.AlipayAuthorizationConfig{AppID: cfg.AlipayAuthAppID, CallbackURL: cfg.AlipayAuthCallbackURL, Production: cfg.AlipayAuthProduction})
+	write(http.MethodPost, "payout-method/alipay/authorizations", authorization.Start)
+	read("payout-method/alipay/authorizations/:authorization_id", authorization.Status)
+	write(http.MethodPost, "payout-method/alipay/authorizations/:authorization_id/confirm", authorization.Confirm)
+	h.GET(tradebff.AlipayAuthorizationCallbackPath, authorization.Callback)
+	h.GET(tradebff.AlipayAuthorizationResultPath, tradebff.AlipayAuthorizationResult)
 	write(http.MethodPost, "payout-method/authorization", trade.MutatePayoutMethod)
 	write(http.MethodPost, "withdrawals", trade.CreateWithdrawal)
 	read("withdrawals/:withdrawal_id", trade.Withdrawal)

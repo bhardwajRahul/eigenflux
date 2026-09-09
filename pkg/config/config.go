@@ -132,6 +132,9 @@ type Config struct {
 	CommissionAPIEndpoint       string
 	CommissionDelegateKID       string
 	CommissionDelegatePrivate   string
+	AlipayAuthAppID             string
+	AlipayAuthCallbackURL       string
+	AlipayAuthProduction        bool
 	EnableCommissionIndex       bool
 	CommissionSourceService     string
 	OrderSourceService          string
@@ -325,6 +328,9 @@ func Load() *Config {
 		CommissionAPIEndpoint:        getEnv("COMMISSION_ENDPOINT", "http://127.0.0.1:8090"),
 		CommissionDelegateKID:        getEnv("COMMISSION_DELEGATION_KEY_ID", ""),
 		CommissionDelegatePrivate:    getEnv("COMMISSION_DELEGATION_PRIVATE_KEY", ""),
+		AlipayAuthAppID:              getEnv("ALIPAY_AUTH_APP_ID", ""),
+		AlipayAuthCallbackURL:        getEnv("ALIPAY_AUTH_CALLBACK_URL", ""),
+		AlipayAuthProduction:         getEnvBool("ALIPAY_AUTH_PRODUCTION", true),
 		EnableCommissionIndex:        getEnvBool("ENABLE_COMMISSION_INDEX", false),
 		CommissionSourceService:      getEnv("COMMISSION_SOURCE_SERVICE", "CommissionService"),
 		OrderSourceService:           getEnv("COMMISSION_ORDER_SOURCE_SERVICE", "OrderService"),

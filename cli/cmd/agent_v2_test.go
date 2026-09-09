@@ -3,8 +3,10 @@ package cmd
 import (
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"fmt"
 	"os"
 	"path/filepath"
 	"reflect"
@@ -76,6 +78,26 @@ func TestProvisionV2TranscriptCoversMutableFields(t *testing.T) {
 	mutated, _ = provisionV2Transcript(request)
 	if ed25519.Verify(publicKey, mutated, signature) {
 		t.Fatal("CLI provision proof did not cover expected_agent_id")
+	}
+	request.ExpectedAgentID = "42"
+	request.Ref = "EF-Bili1234"
+	mutated, _ = provisionV2Transcript(request)
+	if ed25519.Verify(publicKey, mutated, signature) {
+		t.Fatal("CLI provision proof did not cover ref")
+	}
+}
+
+func TestProvisionV2TranscriptWithoutRefPreservesCompatibility(t *testing.T) {
+	request := provisionV2Request{
+		BootstrapGrant: "grant", IdempotencyKey: "request", Nonce: "nonce", PublicKey: "key",
+		IssuedAt: 123, AgentName: "Agent", ExpectedAgentID: "42", Draft: []byte(`{"network_goal":"test"}`),
+		FieldProvenance: map[string]string{"network_goal": "agent_user_context"},
+	}
+	legacyProof := `{"bootstrap_grant":"grant","idempotency_key":"request","nonce":"nonce","public_key":"key","issued_at":123,"agent_name":"Agent","expected_agent_id":"42","onboarding_draft":{"network_goal":"test"},"field_provenance":{"network_goal":"agent_user_context"}}`
+	expected := fmt.Sprintf("EF-AUTH-V2\x00POST\n/api/v2/agent-identities/provision\n%x", sha256.Sum256([]byte(legacyProof)))
+	actual, err := provisionV2Transcript(request)
+	if err != nil || string(actual) != expected {
+		t.Fatalf("empty ref changed the existing signature transcript: %q, %v", actual, err)
 	}
 }
 

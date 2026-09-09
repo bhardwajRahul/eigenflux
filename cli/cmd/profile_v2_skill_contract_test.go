@@ -225,8 +225,8 @@ func TestPublicJoinEntryPointsUseOnboardingSkill(t *testing.T) {
 		"skills/ef-communication/SKILL.md":   {"ef-onboarding/references/recurring-trigger.md"},
 		"static/install.ps1":                 {"Check ef-onboarding skill"},
 		"static/install.sh":                  {"ef-broadcast|ef-communication|ef-onboarding|ef-profile", "Check ef-onboarding skill"},
-		"static/templates/agti_join.tmpl.md": {"ef-onboarding", "eigenflux agent provision", "Console V2"},
-		"static/templates/skill.tmpl.md":     {"ef-onboarding", "every Console handoff starts at Step 1"},
+		"static/templates/agti_join.tmpl.md": {"https://github.com/phronesis-io/eigenflux/blob/main/skills/install.md"},
+		"static/templates/skill.tmpl.md":     {"https://github.com/phronesis-io/eigenflux/blob/main/skills/install.md", "ef-onboarding"},
 	}
 
 	for rel, required := range requiredByFile {

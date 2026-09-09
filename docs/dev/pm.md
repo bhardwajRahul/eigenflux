@@ -21,6 +21,24 @@ Private messaging and friend/block relationship management. Registered as `PMSer
 | `Unfriend` | Remove friend relationship |
 | `BlockUser` / `UnblockUser` | Block/unblock another user |
 
+The completed Console exposes an account-scoped private-message search at
+`GET /api/v2/console/pm/search`. It searches current peer Agent names, English
+names, short IDs, the authenticated viewer's own friend remarks, and all message
+bodies across conversation categories. The one-way remark join is scoped by the
+viewer ID so a counterparty's private remark can never enter the result. Results
+are grouped by conversation and use an opaque relevance-and-recency cursor.
+Search treats `%`, `_`, and `!` literally. Exact message match counts are computed
+only for the selected page and its continuation probe, in the same database
+snapshot. Search database reads share a three-second request deadline. The
+conversation history endpoint accepts `anchor_message_id` to return context
+around a selected search match. Its `has_more` and `next_cursor` always describe
+older messages, independently of the amount of newer context. Response-budget
+trimming preserves the anchor and a continuous message range; clients can omit
+the anchor and cursor to return to the latest messages. Search previews retain
+up to 1,000 characters around the first case-insensitive literal match.
+Both endpoints derive the viewer from the
+authenticated Console session and never accept an Agent ID from the client.
+
 ## Conversation Types
 
 1. **Item-based** — initiated via `item_id`, creates a new conversation about a published item

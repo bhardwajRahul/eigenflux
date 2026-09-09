@@ -433,6 +433,7 @@ func (s *Service) Register(h *server.Hertz) {
 	h.POST("/api/v2/relations/friends/remark", s.agentAuth("relations:write"), s.requireCompleted, apihandler.UpdateFriendRemark)
 	if s.enableCommunication {
 		h.GET("/api/v2/console/pm/conversations", s.consoleAuth(false), s.requireCompleted, s.listCommunicationConversations)
+		h.GET("/api/v2/console/pm/search", s.consoleAuth(false), s.requireCompleted, s.searchCommunicationMessages)
 		h.GET("/api/v2/console/pm/conversations/:conv_id/messages", s.consoleAuth(false), s.requireCompleted, s.listCommunicationMessages)
 		h.POST("/api/v2/console/pm/conversations/:conv_id/topic-status", s.consoleAuth(true), s.requireCompleted, s.updateCommunicationTopicStatus)
 		h.GET("/api/v2/console/relations/friend-requests", s.consoleAuth(false), s.requireCompleted, s.listCommunicationFriendRequests)

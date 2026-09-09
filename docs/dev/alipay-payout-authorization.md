@@ -20,6 +20,35 @@ Confirmation uses the attempt's stable server-generated Wallet idempotency key. 
 
 The existing HTTP tracer captures full URLs. Its ignore predicate excludes only the Alipay authorization callback to prevent code/state export; other request tracing remains unchanged. Proxy access-log redaction remains a deployment prerequisite outside this source change.
 
+### Caddy callback log redaction
+
+`cloud/caddy/alipay_callback_log_filter.caddy` defines the shared Caddy log
+encoder for the canonical callback path. It removes that path's entire query
+string at encoding time, leaving the upstream request, status, timing, headers,
+and all other URI paths unchanged. It neither disables access logs nor rewrites
+the authorization request. Caddy's `log_append` cannot replace `request.uri`.
+
+Install the main-merged snippet under `/etc/caddy/` and import its absolute path
+at the top level of the existing root-managed Caddyfile. Within both existing
+access loggers (`access-file` and `access-journal`), replace `format json` with
+`import alipay_callback_log_filter`. Apply the same encoder to the `default`
+logger: upstream failures produce `http.log.error` records outside the access
+loggers. Preserve every logger's writers, include/exclude rules, and all site
+routes. Do not replace the production Caddyfile with the repository's generic
+template.
+
+Before enabling the BFF callback, back up the configuration, validate with the
+installed Caddy binary, and reload Caddy. Verify redaction in the file and
+journal using only non-credential canaries with invalid state, and check a
+non-callback read-only endpoint still retains its ordinary query. Callback and
+result responses already use `Referrer-Policy: no-referrer` and redirect to a
+credential-free result page. Real authorization codes or states must not be
+used for deployment probes.
+
+The isolated local regression suite exercises the production snippet with a
+real Caddy process, two log outputs, and a loopback upstream, including a 502
+error. Run `CADDY_BIN=/path/to/caddy python3 scripts/cloud/test_alipay_callback_logs.py`.
+
 ## Configuration and readiness
 
 EigenFlux BFF needs `ALIPAY_AUTH_APP_ID`, `ALIPAY_AUTH_CALLBACK_URL` (fixed HTTPS callback path above), and `ALIPAY_AUTH_PRODUCTION` (default true). Missing/invalid configuration disables only this authorization flow, not other BFF routes. No merchant private key is added to EigenFlux.

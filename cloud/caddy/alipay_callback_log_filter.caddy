@@ -1,0 +1,8 @@
+(alipay_callback_log_filter) {
+	format filter {
+		wrap json
+		fields {
+			request>uri regexp ^/api/v2/console/alipay/authorization/callback[?].*$ /api/v2/console/alipay/authorization/callback
+		}
+	}
+}

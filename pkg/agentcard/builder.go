@@ -283,9 +283,6 @@ func cardRuntimeFields(mode, clientHost, runtimeName, runtimeVersion, cliVersion
 		legacy = clientHost
 	}
 	runtimeMode = mode
-	if runtimeMode == "" && cliVersion != "" {
-		runtimeMode = "cli-direct"
-	}
 	name, version = runtimeName, runtimeVersion
 	if name == "" {
 		if identity, ok := runtimeidentity.Parse(clientHost); ok {

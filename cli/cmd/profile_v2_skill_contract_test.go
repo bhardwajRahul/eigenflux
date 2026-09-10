@@ -50,7 +50,7 @@ func TestProfileSkillOwnsOnlyPostOnboardingLifecycle(t *testing.T) {
 			t.Errorf("ef-profile frontmatter is missing account trigger %q", trigger)
 		}
 	}
-	if !strings.Contains(frontmatter[1], `version: "0.9.1"`) {
+	if !strings.Contains(frontmatter[1], `version: "0.9.2"`) {
 		t.Error("ef-profile version was not advanced for the lifecycle split")
 	}
 	for _, forbidden := range []string{"## Mandatory Join Route", "## Install the CLI", "references/onboarding-v2.md"} {
@@ -102,7 +102,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 
 	entry := readRepoFile(t, repoRoot, "skills/ef-onboarding/SKILL.md")
 	for _, required := range []string{
-		`version: "0.1.0"`,
+		`version: "0.1.1"`,
 		"references/consent.md",
 		"references/prefill.md",
 		"references/recurring-trigger.md",
@@ -151,7 +151,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 	handoff := readRepoFile(t, repoRoot, "skills/ef-onboarding/references/console-handoff.md")
 	for _, required := range []string{
 		"eigenflux --homedir \"<agent-home>\" agent init --format json",
-		"eigenflux --homedir \"<agent-home>\" agent provision --draft-file -",
+		"eigenflux --homedir \"<agent-home>\" agent provision --mode \"<installation-mode>\" --runtime-name \"<known-product>\" --draft-file -",
 		"a non-empty `ticket` query parameter",
 		"a non-empty `nonce` URL fragment",
 		"[【点击此处，以人类伙伴身份继续 →】](<console_url>)",
@@ -200,7 +200,7 @@ func TestConsoleV2SchedulerStoresOnlyHeartbeatLauncher(t *testing.T) {
 	if len(launcherBlock) != 2 {
 		t.Fatal("scheduler launcher block is not closed")
 	}
-	const want = "eigenflux --homedir \"<agent-home>\" heartbeat plan --format agent"
+	const want = "EIGENFLUX_MODE=\"<installation-mode>\" eigenflux --homedir \"<agent-home>\" heartbeat plan --format agent"
 	if got := strings.TrimSpace(launcherBlock[0]); got != want {
 		t.Fatalf("scheduler body must be the thin launcher only\nwant: %s\n got: %s", want, got)
 	}

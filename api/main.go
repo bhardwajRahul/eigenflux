@@ -32,6 +32,7 @@ import (
 	agentcardapi "eigenflux_server/api/agentcard"
 	"eigenflux_server/api/agti"
 	"eigenflux_server/api/clients"
+	"eigenflux_server/api/commissionaccess"
 	"eigenflux_server/api/commissiondiscovery"
 	"eigenflux_server/api/commissionintegration"
 	"eigenflux_server/api/consolev2"
@@ -69,6 +70,13 @@ import (
 
 func main() {
 	cfg := config.Load()
+	if err := cfg.ValidateCommissionDiscoveryConfiguration(); err != nil {
+		log.Fatal("invalid Commission discovery configuration")
+	}
+	commissionAccess, err := commissionaccess.New(cfg.EnableCommissionAllowlist, cfg.CommissionAgentIDWhitelist)
+	if err != nil {
+		log.Fatal(err)
+	}
 	integrationMode, err := cfg.CommissionIntegrationMode()
 	if err != nil {
 		log.Fatal("invalid Commission integration configuration")
@@ -185,7 +193,7 @@ func main() {
 	log.Println("Sort RPC client initialized")
 	var commissionDiscoveryService *commissiondiscovery.Service
 	var commissionDiscoveryIDGen *idgen.ManagedGenerator
-	if cfg.EnableCommissionIndex {
+	if cfg.CommissionDiscoveryEnabled {
 		commissionDiscoveryIDGen, err = idgen.NewManagedGenerator(context.Background(), idgen.ManagedGeneratorConfig{
 			Endpoints:      splitEtcdEndpoints(cfg.EtcdAddr),
 			WorkerPrefix:   cfg.IDWorkerPrefix,
@@ -198,7 +206,7 @@ func main() {
 			log.Fatalf("failed to init Commission discovery impression id generator: %v", err)
 		}
 		defer func() { _ = commissionDiscoveryIDGen.Close(context.Background()) }()
-		commissionDiscoveryService = commissiondiscovery.New(sortClient, commissionDiscoveryIDGen, mq.Publish)
+		commissionDiscoveryService = commissiondiscovery.New(sortClient, commissionDiscoveryIDGen, mq.Publish, commissionAccess)
 	}
 
 	var integrationServer *server.Hertz

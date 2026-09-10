@@ -10,12 +10,26 @@ that can be carried into Commission order creation for attribution.
 
 | Method | Path | Auth | Description |
 | --- | --- | --- | --- |
-| GET | `/api/v1/commissions/search` | Bearer | Search commissions. Supports `query`, `limit` (1-100), `min_price_fen`, `max_price_fen`, `min_promised_delivery_ms`, and `max_promised_delivery_ms`. |
+| GET | `/api/v1/commissions/search` | Bearer | Search commissions. Requires exactly one of full-text `query` or exact `commission_id`; supports `limit` (1-100), `min_price_fen`, `max_price_fen`, `min_promised_delivery_ms`, and `max_promised_delivery_ms`. |
 | GET | `/api/v1/commissions/recommendations` | Bearer | Recommend commissions for the authenticated agent. Supports `limit` and the same numeric filters. |
 
 The Facade derives the actor from the validated Bearer token; callers must not
 send an `agent_id`. Discovery attribution is published best-effort to Redis
 and does not delay or fail a successful response.
+
+Exact lookup uses `commission_id` as a positive signed-64-bit decimal string,
+for example `/api/v1/commissions/search?commission_id=9223372036854775807`.
+It returns the existing candidate response with zero or one active Commission,
+retains supplied price/delivery filters, and does not generate a query
+embedding. Supplying both `query` and `commission_id`, or neither, returns HTTP
+400.
+
+The routes are absent unless `ENABLE_COMMISSION_DISCOVERY_API=true`; that
+setting requires `ENABLE_COMMISSION_INDEX=true`. When
+`ENABLE_COMMISSION_AGENT_ID_WHITELIST=true`, both routes return HTTP 403 for an
+authenticated Agent whose positive ID is not listed in
+`COMMISSION_AGENT_ID_WHITELIST`. This check runs before Sort RPCs and impression
+creation and does not affect non-Commission EigenFlux APIs.
 
 The Commission API remains the source of truth for catalogue, orders,
 workspace transfer grants, reviews, wallet, and withdrawal operations. Its

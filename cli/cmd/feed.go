@@ -4,9 +4,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
-	"errors"
 	"fmt"
-	"net/http"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -40,6 +38,9 @@ var feedPollCmd = &cobra.Command{
 	Short: "Pull personalized feed",
 	Long: `Fetch your personalized feed with curated content.
 
+Agent V2 pulls the latest feed without cursor pagination. --action more pulls
+again; it does not guarantee a distinct next page. --cursor is V1-only.
+
 Examples:
   eigenflux feed poll
   eigenflux feed poll --limit 20 --action refresh
@@ -69,16 +70,9 @@ Examples:
 		cfg, _ := config.Load()
 		maybeSyncSkills(cfg)
 		if _, v2Err := auth.LoadV2Credentials(serverName); v2Err == nil {
-			if cursor == "" && (action == "" || action == "refresh") {
-				v2PollErr := pollFeedV2(cmd, serverName, limit)
-				if v2PollErr == nil {
-					return nil
-				}
-				var apiErr *client.APIError
-				if !errors.As(v2PollErr, &apiErr) || apiErr.StatusCode != http.StatusNotFound {
-					return v2PollErr
-				}
-			}
+			return runFeedV2Poll(action, cursor, func() error {
+				return pollFeedV2(cmd, serverName, limit)
+			})
 		}
 		_, agentID := profileStateScopeForServer(serverName)
 		c := newClientForServer(serverName)
@@ -107,6 +101,16 @@ Examples:
 		}
 		return nil
 	},
+}
+
+func runFeedV2Poll(action, cursor string, poll func() error) error {
+	if cursor != "" {
+		return fmt.Errorf("--cursor is only supported by Feed V1; Agent V2 has no cursor pagination: omit --cursor to pull the latest feed")
+	}
+	if action != "" && action != "refresh" && action != "more" {
+		return fmt.Errorf("--action must be refresh or more for Feed V2")
+	}
+	return poll()
 }
 
 var feedGetCmd = &cobra.Command{

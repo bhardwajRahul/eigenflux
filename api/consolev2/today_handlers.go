@@ -23,6 +23,7 @@ const (
 )
 
 type todayEncounter struct {
+	ShowAddFriend    bool   `gorm:"column:show_add_friend" json:"show_add_friend"`
 	PeerAgentID      int64  `gorm:"column:peer_agent_id" json:"peer_agent_id,string"`
 	LastInteraction  int64  `gorm:"column:last_interaction_at" json:"last_interaction_at"`
 	InteractionCount int64  `gorm:"column:interaction_count" json:"interaction_count"`
@@ -469,9 +470,11 @@ func (s *Service) getToday(_ context.Context, c *app.RequestContext) {
 		)
 		SELECT grouped.peer_agent_id, grouped.last_interaction_at, grouped.interaction_count,
 			COALESCE(card.private_card->>'geo', '') AS country_code,
+			COALESCE(settings.show_add_friend, true) AS show_add_friend,
 			COUNT(*) OVER() AS total_count
 		FROM grouped
 		LEFT JOIN agent_cards card ON card.agent_id = grouped.peer_agent_id
+		LEFT JOIN agent_settings settings ON settings.agent_id = grouped.peer_agent_id
 		ORDER BY grouped.last_interaction_at DESC, grouped.peer_agent_id DESC LIMIT ?`,
 		agentIDValue, todayStart, agentIDValue, todayStart,
 		agentIDValue, todayStart,

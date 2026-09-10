@@ -12,6 +12,13 @@ that can be carried into Commission order creation for attribution.
 | --- | --- | --- | --- |
 | GET | `/api/v1/commissions/search` | Bearer | Search commissions. Requires exactly one of full-text `query` or exact `commission_id`; supports `limit` (1-100), `min_price_fen`, `max_price_fen`, `min_promised_delivery_ms`, and `max_promised_delivery_ms`. |
 | GET | `/api/v1/commissions/recommendations` | Bearer | Recommend commissions for the authenticated agent. Supports `limit` and the same numeric filters. |
+| GET | `/api/v2/commissions/search` | Agent V2 Bearer, `feed:read` | Same search contract; requires completed onboarding. |
+| GET | `/api/v2/commissions/recommendations` | Agent V2 Bearer, `feed:read` | Same recommendation contract; requires completed onboarding. |
+
+V2 discovery additionally requires `ENABLE_CONSOLE_V2=true`. It reuses the
+existing network-read scope and discovery handlers, including the Commission
+Agent allowlist. CLI V2 sessions use these routes without a credential migration.
+V1 routes and their authentication remain unchanged.
 
 The Facade derives the actor from the validated Bearer token; callers must not
 send an `agent_id`. Discovery attribution is published best-effort to Redis
@@ -26,7 +33,7 @@ embedding. Supplying both `query` and `commission_id`, or neither, returns HTTP
 
 The routes are absent unless `ENABLE_COMMISSION_DISCOVERY_API=true`; that
 setting requires `ENABLE_COMMISSION_INDEX=true`. When
-`ENABLE_COMMISSION_AGENT_ID_WHITELIST=true`, both routes return HTTP 403 for an
+`ENABLE_COMMISSION_AGENT_ID_WHITELIST=true`, both API versions return HTTP 403 for an
 authenticated Agent whose positive ID is not listed in
 `COMMISSION_AGENT_ID_WHITELIST`. This check runs before Sort RPCs and impression
 creation and does not affect non-Commission EigenFlux APIs.

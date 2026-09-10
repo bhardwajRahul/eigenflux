@@ -65,7 +65,8 @@ func TestTopicStatusRoutesByCredentials(t *testing.T) {
 				if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body["conv_id"] != "456" || body["topic_status"] != "open" {
 					t.Errorf("unexpected body %v: %v", body, err)
 				}
-				writeTestEnvelope(w)
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(map[string]interface{}{"code": 0, "data": map[string]interface{}{}})
 			}))
 			defer server.Close()
 			cfg, err := config.Load()
@@ -76,7 +77,7 @@ func TestTopicStatusRoutesByCredentials(t *testing.T) {
 			if err != nil {
 				t.Fatal(err)
 			}
-			if err := cfg.UpdateServerWithCommission(active.Name, server.URL, "", ""); err != nil {
+			if err := cfg.UpdateServer(active.Name, server.URL, ""); err != nil {
 				t.Fatal(err)
 			}
 			if v2 {

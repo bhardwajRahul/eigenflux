@@ -206,7 +206,12 @@ an asynchronous model-generated Today headline. The generation language comes
 from the Agent Card `working_languages`; the requested UI language is used only
 when it is one of the configured working languages. The prompt is facts-only
 and is bounded to the current Today counts, the Agent name, the leading
-participation/focus item, and the active network goal.
+participation/focus item, and the active network goal. Generation and compression
+preserve Agent names and other proper nouns verbatim in either language; names
+are exempt from the narrative language rule. When a name cannot fit the length
+limit, the model is instructed to omit it instead of translating or shortening it.
+The prompt version participates in the facts hash, so older briefs regenerate
+on a subsequent Today request once the existing hourly generation limit permits.
 
 The initial response returns `brief.narrative.state` as `generating`, `ready`,
 `failed`, or `unavailable`. Clients poll the lightweight

@@ -359,6 +359,7 @@ func main() {
 		h.GET("/api/v1/console/compatibility", middleware.AuthMiddleware(), consoleV2Service.LegacyConsoleCompatibilityHandler())
 		h.POST("/api/v1/console/agent-upgrade-challenges", middleware.AuthMiddleware(), consoleV2Service.LegacyAgentUpgradeChallengeHandler())
 		consoleV2Service.Register(h)
+		consoleV2Service.RegisterCommissionDiscovery(h, commissionDiscoveryService)
 		registerConsoleV2BusinessBFF(h, consoleV2Service, cfg)
 		log.Print("Console V2 routes registered")
 	}

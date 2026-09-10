@@ -21,9 +21,11 @@ import (
 	"gorm.io/gorm"
 
 	consoledal "eigenflux_server/api/dal"
+	"eigenflux_server/api/install"
 	"eigenflux_server/pkg/activity"
 	"eigenflux_server/pkg/agentcard"
 	"eigenflux_server/pkg/agentidentity"
+	"eigenflux_server/pkg/logger"
 	"eigenflux_server/pkg/metrics"
 	"eigenflux_server/pkg/runtimeidentity"
 )
@@ -201,6 +203,7 @@ type provisionRequest struct {
 	Signature       string            `json:"signature"`
 	Draft           json.RawMessage   `json:"onboarding_draft,omitempty"`
 	FieldProvenance map[string]string `json:"field_provenance,omitempty"`
+	Ref             string            `json:"ref,omitempty"`
 }
 
 type provisionProofPayload struct {
@@ -213,6 +216,7 @@ type provisionProofPayload struct {
 	ExpectedAgentID string            `json:"expected_agent_id,omitempty"`
 	Draft           json.RawMessage   `json:"onboarding_draft,omitempty"`
 	FieldProvenance map[string]string `json:"field_provenance,omitempty"`
+	Ref             string            `json:"ref,omitempty"`
 }
 
 func provisionTranscript(req provisionRequest) ([]byte, error) {
@@ -226,6 +230,7 @@ func provisionTranscript(req provisionRequest) ([]byte, error) {
 		ExpectedAgentID: req.ExpectedAgentID,
 		Draft:           req.Draft,
 		FieldProvenance: req.FieldProvenance,
+		Ref:             req.Ref,
 	}
 	canonical, err := json.Marshal(payload)
 	if err != nil {
@@ -239,6 +244,7 @@ func provisionReceiptHash(req provisionRequest) (string, error) {
 		BootstrapGrant: req.BootstrapGrant, IdempotencyKey: req.IdempotencyKey,
 		Nonce: req.Nonce, PublicKey: req.PublicKey, AgentName: req.AgentName, ExpectedAgentID: req.ExpectedAgentID, Draft: req.Draft,
 		FieldProvenance: req.FieldProvenance,
+		Ref:             req.Ref,
 	}
 	canonical, err := json.Marshal(payload)
 	if err != nil {
@@ -290,6 +296,10 @@ func (s *Service) provision(ctx context.Context, c *app.RequestContext) {
 	transcript, transcriptErr := provisionTranscript(req)
 	if err != nil || transcriptErr != nil || !ed25519.Verify(publicKey, transcript, signature) {
 		fail(c, http.StatusUnauthorized, "INVALID_PROOF", "Ed25519 proof verification failed", nil)
+		return
+	}
+	if req.Ref != "" && !install.ValidTokenFormat(req.Ref) {
+		fail(c, http.StatusBadRequest, "INVALID_REF", "ref must be an EF-xxxxxxxx install token", nil)
 		return
 	}
 	if len([]rune(req.AgentName)) > 100 {
@@ -354,6 +364,7 @@ func (s *Service) provision(ctx context.Context, c *app.RequestContext) {
 	observedRuntime, _ := runtimeidentity.Parse(string(c.GetHeader("X-Client-Host")))
 	var agentID, principalID, expiresAt int64
 	created := false
+	var attribution install.ProvisionAttribution
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		if err := tx.Exec(`SELECT pg_advisory_xact_lock(hashtextextended(?, 0))`, keyFingerprint).Error; err != nil {
 			return err
@@ -506,6 +517,10 @@ func (s *Service) provision(ctx context.Context, c *app.RequestContext) {
 			if err := insertProvisionedAgent(tx, agentID, alias, req.AgentName, now); err != nil {
 				return err
 			}
+			attribution, err = install.BindProvisionedAgent(tx, req.Ref, agentID, now)
+			if err != nil {
+				return err
+			}
 			if err := tx.Exec(`INSERT INTO agent_profiles (agent_id, status, updated_at) VALUES (?, 0, ?)`, agentID, now).Error; err != nil {
 				return err
 			}
@@ -575,6 +590,15 @@ func (s *Service) provision(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	if created {
+		if attribution.Channel != "" {
+			logger.Default().Info("install", "ev", "install_acq_channel", "ref", req.Ref,
+				"channel", attribution.Channel, "agent_id", agentID, "via", "v2_provision")
+		}
+		if attribution.InviteCode != "" {
+			logger.Default().Info("install", "ev", "install_invite_attributed", "ref", req.Ref,
+				"invite_code", attribution.InviteCode, "agent_id", agentID,
+				"inviter", attribution.InviterAgentID, "via", "v2_provision")
+		}
 		agentcard.PublishRebuild(ctx, agentID, "agent_v2_provisioned")
 	}
 	publicIdentity, identityErr := agentidentity.Get(ctx, s.db, agentID)

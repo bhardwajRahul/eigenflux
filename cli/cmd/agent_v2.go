@@ -177,6 +177,7 @@ type provisionV2Request struct {
 	Signature       string            `json:"signature"`
 	Draft           json.RawMessage   `json:"onboarding_draft,omitempty"`
 	FieldProvenance map[string]string `json:"field_provenance,omitempty"`
+	Ref             string            `json:"ref,omitempty"`
 }
 
 type provisionV2Proof struct {
@@ -189,6 +190,7 @@ type provisionV2Proof struct {
 	ExpectedAgentID string            `json:"expected_agent_id,omitempty"`
 	Draft           json.RawMessage   `json:"onboarding_draft,omitempty"`
 	FieldProvenance map[string]string `json:"field_provenance,omitempty"`
+	Ref             string            `json:"ref,omitempty"`
 }
 
 type v2Poster interface {
@@ -249,6 +251,7 @@ func provisionV2Transcript(request provisionV2Request) ([]byte, error) {
 		PublicKey:      request.PublicKey, IssuedAt: request.IssuedAt,
 		AgentName: request.AgentName, ExpectedAgentID: request.ExpectedAgentID,
 		Draft: request.Draft, FieldProvenance: request.FieldProvenance,
+		Ref: request.Ref,
 	})
 	if err != nil {
 		return nil, err
@@ -360,6 +363,20 @@ var agentV2ProvisionCmd = &cobra.Command{
 		if requireExistingAgent && !preserveExistingIdentity {
 			return fmt.Errorf("cannot prove an existing Agent identity in the selected stable Agent Home")
 		}
+		ref, _ := cmd.Flags().GetString("ref")
+		var installRef *auth.InstallRef
+		if ref != "" {
+			installRef, _, err = auth.RememberInstallRef(*server, server.Endpoint, ref)
+		} else {
+			installRef, err = auth.LoadInstallRef(*server)
+		}
+		if err != nil {
+			return fmt.Errorf("load install referral: %w", err)
+		}
+		ref = ""
+		if installRef != nil {
+			ref = installRef.Ref
+		}
 		if grant == "" {
 			if hasV2 {
 				grant, nonce, err = requestAutomaticRegistrationChallenge(v2, publicKey)
@@ -399,6 +416,7 @@ var agentV2ProvisionCmd = &cobra.Command{
 			PublicKey:      base64.RawURLEncoding.EncodeToString(publicKey),
 			IssuedAt:       time.Now().UnixMilli(), AgentName: agentName, ExpectedAgentID: expectedAgentID, Draft: draft,
 			FieldProvenance: fieldProvenance,
+			Ref:             ref,
 		}
 		transcript, err := provisionV2Transcript(request)
 		if err != nil {
@@ -474,6 +492,7 @@ func init() {
 	agentV2ProvisionCmd.Flags().String("nonce", "", "single-use proof nonce paired with --bootstrap-grant")
 	agentV2ProvisionCmd.Flags().String("agent-name", "EigenFlux Agent", "Agent name used to prefill onboarding")
 	agentV2ProvisionCmd.Flags().String("draft-file", "", "optional onboarding draft JSON file ('-' reads stdin)")
+	agentV2ProvisionCmd.Flags().String("ref", "", "install referral for a new Agent (defaults to the first referral saved in this Home for this server)")
 	agentV2ProvisionCmd.Flags().Bool("no-handoff", false, "provision without creating a Console V2 link")
 	agentV2ProvisionCmd.Flags().Bool("recover-account", false, "open the claim page to recover a historical Agent")
 	agentV2ProvisionCmd.Flags().Bool("require-existing-agent", false, "refuse public registration unless this Home already proves an Agent identity")

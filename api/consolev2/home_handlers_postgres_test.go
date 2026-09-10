@@ -528,8 +528,9 @@ func testConsoleCountrySources(t *testing.T, db *gorm.DB, svc *Service, h *serve
 		t.Fatalf("Today encounters should default to allowing friend requests: %#v", encounters)
 	}
 	for _, visible := range []bool{false, true} {
-		exec(`INSERT INTO agent_settings (agent_id, show_add_friend) VALUES (?, ?)
-			ON CONFLICT (agent_id) DO UPDATE SET show_add_friend = EXCLUDED.show_add_friend`, peerID, visible)
+		exec(`INSERT INTO agent_settings (agent_id, show_add_friend, updated_at) VALUES (?, ?, ?)
+			ON CONFLICT (agent_id) DO UPDATE SET show_add_friend = EXCLUDED.show_add_friend,
+			updated_at = EXCLUDED.updated_at`, peerID, visible, time.Now().UnixMilli())
 		settingStatus, settingPayload, _ := performJSON(t, h, http.MethodGet, "/api/v2/console/today", map[string]interface{}{}, cookie)
 		if settingStatus != http.StatusOK {
 			t.Fatalf("Today setting status=%d payload=%#v", settingStatus, settingPayload)

@@ -30,23 +30,25 @@ type homeDiscoveryMetric struct {
 }
 
 type homeDiscoveryAgent struct {
-	RuleKey          string              `json:"rule_key"`
-	AgentID          string              `json:"agent_id"`
-	ShortID          string              `json:"short_id"`
-	SharePath        string              `json:"share_path"`
-	AgentName        string              `json:"agent_name"`
-	AgentNameEn      string              `json:"agent_name_en,omitempty"`
-	CountryCode      string              `json:"country_code,omitempty"`
-	AgentDescription string              `json:"agent_description,omitempty"`
-	HumanDescription string              `json:"human_description,omitempty"`
-	Capabilities     []string            `json:"capabilities,omitempty"`
-	Runtime          string              `json:"runtime,omitempty"`
-	IsFriend         bool                `json:"is_friend"`
-	RequestPending   bool                `json:"friend_request_pending"`
-	ShowAddFriend    bool                `json:"show_add_friend"`
-	IsSelf           bool                `json:"is_self"`
-	JoinedAt         int64               `json:"joined_at"`
-	Metric           homeDiscoveryMetric `json:"metric"`
+	RuleKey          string   `json:"rule_key"`
+	AgentID          string   `json:"agent_id"`
+	ShortID          string   `json:"short_id"`
+	SharePath        string   `json:"share_path"`
+	AgentName        string   `json:"agent_name"`
+	AgentNameEn      string   `json:"agent_name_en,omitempty"`
+	CountryCode      string   `json:"country_code,omitempty"`
+	AgentDescription string   `json:"agent_description,omitempty"`
+	HumanDescription string   `json:"human_description,omitempty"`
+	Capabilities     []string `json:"capabilities,omitempty"`
+	// Deprecated: legacy Card runtime alias; migrate this DTO and its consumers
+	// to runtime_name/runtime_version and runtime_mode for product/mode display.
+	Runtime        string              `json:"runtime,omitempty"`
+	IsFriend       bool                `json:"is_friend"`
+	RequestPending bool                `json:"friend_request_pending"`
+	ShowAddFriend  bool                `json:"show_add_friend"`
+	IsSelf         bool                `json:"is_self"`
+	JoinedAt       int64               `json:"joined_at"`
+	Metric         homeDiscoveryMetric `json:"metric"`
 }
 
 type homeDiscoveryResponse struct {

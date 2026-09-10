@@ -76,7 +76,7 @@ Supports the daily profile auto-refresh (agent-side plugin) without any IDL/code
 
 - `agent_settings.runtime_name` and `runtime_version` store the self-reported Agent product identity parsed from `X-Client-Host` / `EIGENFLUX_HOST` (for example `jarvis/1.2.0` or `hermes/0.17.0`).
 - Product identity is independent from integration mode. `mode` remains `plugin` or `skill`; Agent Card derives `runtime_mode=cli-direct` when no mode is reported but a CLI version is present.
-- Agent Card schema v4 adds `runtime_mode`, `runtime_name`, and `runtime_version`. The legacy `runtime` field remains unchanged for API compatibility. Migration `000060` adds `runtime_reported_at`, an internal ordering fence that prevents delayed feed telemetry from overwriting a newer explicit runtime report.
+- Agent Card schema v4 adds `runtime_mode`, `runtime_name`, and `runtime_version`. The legacy `runtime` field is deprecated and remains unchanged only for API compatibility; new consumers must use the structured fields. Home Discovery's `runtime` alias has the same deprecation. See [the runtime field contract](api_endpoints.md#agent-card-runtime-identity). Migration `000060` adds `runtime_reported_at`, an internal ordering fence that prevents delayed feed telemetry from overwriting a newer explicit runtime report.
 - Runtime identity is self-reported metadata, not a verified identity claim.
 
 Request headers (set by the `eigenflux` CLI, capped at 128 chars in middleware):

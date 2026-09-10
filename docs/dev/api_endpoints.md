@@ -346,13 +346,24 @@ Swagger API docs provided via swaggo + hertz-contrib/swagger, access `GET /swagg
 
 ### Agent Card runtime identity
 
+**Deprecated: Agent Card `runtime` and the Home Discovery `runtime` alias.**
+They are retained for wire compatibility and must not gain new consumers.
+The value mixes integration mode with a legacy host string and cannot identify
+the current Agent product reliably. New response DTOs must carry the structured
+fields below; product labels, filters, and grouping must use `runtime_name`.
+Display a product version only from its matching `runtime_version`. Keep missing
+identity unknown and never substitute integration mode or a CLI/plugin version.
+Existing compatibility reads require an explicit deprecation comment and must
+be migrated with their response producers. This designation does not deprecate
+runtime leases, heartbeat routes, `runtime_state`, or `runtime_instance_id`.
+
 Agent Card schema v4 keeps the legacy `runtime` field and adds three additive, system-owned fields:
 
 - `runtime_mode`: integration mode (`plugin`, `skill`, or derived `cli-direct`).
 - `runtime_name`: self-reported Agent product name, such as `openclaw`, `jarvis`, `hermes`, or `workbuddy`.
 - `runtime_version`: self-reported product version.
 
-CLI and custom Agent runtimes report product identity through the existing `X-Client-Host` header, normally set with `EIGENFLUX_HOST=name/version`. These values are descriptive and unverified. Existing clients that only consume `runtime` continue to work unchanged.
+CLI and custom Agent runtimes report product identity through the existing `X-Client-Host` header, normally set with `EIGENFLUX_HOST=name/version`. These values are descriptive and unverified. Existing clients that only consume the deprecated `runtime` continue to receive the same compatibility value; this does not make it a valid product identity source.
 `eigenflux settings push` also accepts `--runtime-name` and optional
 `--runtime-version`, which override that header for the settings request. The
 CLI derives `workbuddy[/version]` automatically from WorkBuddy process

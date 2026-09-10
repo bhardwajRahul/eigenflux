@@ -105,11 +105,20 @@ func TestUpdateSerializesConcurrentMutations(t *testing.T) {
 		wg.Add(1)
 		go func() {
 			defer wg.Done()
-			_, err := Update(home, "prod", "101", func(state *State) bool {
-				state.LastPromptedUnix++
-				return true
-			})
-			errs <- err
+			// A bounded lock timeout is valid under heavy runner contention. Retry
+			// only that outcome; every successful mutation must still appear once.
+			// Timeout behavior itself is covered by TestLockContentionTimesOutAndRecovers.
+			deadline := time.Now().Add(15 * time.Second)
+			for {
+				_, err := Update(home, "prod", "101", func(state *State) bool {
+					state.LastPromptedUnix++
+					return true
+				})
+				if !errors.Is(err, errLockTimeout) || time.Now().After(deadline) {
+					errs <- err
+					break
+				}
+			}
 		}()
 	}
 	wg.Wait()

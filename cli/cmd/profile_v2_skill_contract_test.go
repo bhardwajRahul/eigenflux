@@ -13,7 +13,8 @@ func readRepoFile(t *testing.T, repoRoot, rel string) string {
 	if err != nil {
 		t.Fatalf("read %s: %v", rel, err)
 	}
-	return string(body)
+	// Git checkouts may use CRLF on Windows; prose contracts use canonical LF.
+	return strings.ReplaceAll(string(body), "\r\n", "\n")
 }
 
 func TestProfileSkillOwnsOnlyPostOnboardingLifecycle(t *testing.T) {

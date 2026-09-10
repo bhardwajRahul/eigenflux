@@ -4,6 +4,7 @@ import (
 	"errors"
 	"os"
 	"os/exec"
+	"runtime"
 	"sync"
 	"testing"
 	"time"
@@ -24,7 +25,8 @@ func TestStateRoundTripAndScopeIsolation(t *testing.T) {
 	if got := Load(home, "staging", "101"); got != (State{}) {
 		t.Fatalf("another server inherited state: %+v", got)
 	}
-	if mode := fileMode(t, FilePath(home, "prod", "101")); mode != 0o600 {
+	// Windows reports synthesized mode bits; its file access uses inherited ACLs.
+	if mode := fileMode(t, FilePath(home, "prod", "101")); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Fatalf("state mode = %o, want 600", mode)
 	}
 }

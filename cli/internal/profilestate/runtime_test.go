@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"testing"
 	"time"
 )
@@ -48,7 +49,8 @@ func TestRuntimeUpdateSerializesAcrossProcesses(t *testing.T) {
 	if err != nil || got.Revision != 2 {
 		t.Fatalf("concurrent updates lost: state=%+v err=%v", got, err)
 	}
-	if mode := fileMode(t, runtimeFilePath(home, "prod")); mode != 0o600 {
+	// Windows reports synthesized mode bits; its file access uses inherited ACLs.
+	if mode := fileMode(t, runtimeFilePath(home, "prod")); runtime.GOOS != "windows" && mode != 0o600 {
 		t.Fatalf("runtime file mode=%o", mode)
 	}
 	other, err := LoadRuntime(home, "other")

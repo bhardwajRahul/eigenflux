@@ -150,3 +150,59 @@ func TestTodayBriefPublicViewMapsPendingToGenerating(t *testing.T) {
 		t.Fatalf("ready state changed to %q", got)
 	}
 }
+
+// Capture the request at the model boundary without depending on live model output.
+type todayBriefRecordingClient struct {
+	prompts []string
+	outputs []string
+}
+
+func (c *todayBriefRecordingClient) CallText(_ context.Context, prompt, _ string) (string, error) {
+	c.prompts = append(c.prompts, prompt)
+	output := c.outputs[0]
+	c.outputs = c.outputs[1:]
+	return output, nil
+}
+
+func TestTodayBriefNameInstructionsReachGenerationAndCompression(t *testing.T) {
+	for _, language := range []string{todayBriefChinese, todayBriefEnglish} {
+		for _, name := range []string{"Monster", "怪物", "Monster 小助手", "MøNster & Co."} {
+			t.Run(language+"/"+name, func(t *testing.T) {
+				want := name + " found a useful update."
+				if language == todayBriefChinese {
+					want = name + "发现了一条有用的信息。"
+				}
+				client := &todayBriefRecordingClient{outputs: []string{
+					name + strings.Repeat("x", todayBriefLimit(language)), want,
+				}}
+				got, err := generateNormalizedTodayBrief(context.Background(), &llmTodayBriefGenerator{client: client}, todayBriefFacts{AgentName: name}, language)
+				if err != nil || got != want {
+					t.Fatalf("brief=%q err=%v", got, err)
+				}
+				if len(client.prompts) != 2 {
+					t.Fatalf("expected generation and compression, got %d calls", len(client.prompts))
+				}
+				for _, prompt := range client.prompts {
+					for _, rule := range []string{"Never translate, transliterate, localize", "append a role label", "Names in another language are allowed", "subject-free sentence or pronoun"} {
+						if !strings.Contains(prompt, rule) {
+							t.Errorf("model request missing name protection %q", rule)
+						}
+					}
+					target := "Simplified Chinese"
+					if language == todayBriefEnglish {
+						target = "English"
+					}
+					if !strings.Contains(prompt, "sentence in "+target) {
+						t.Errorf("model request missing target language %q", target)
+					}
+				}
+				if !strings.Contains(client.prompts[0], "copy agent_name exactly") {
+					t.Error("generation must explicitly preserve the display name")
+				}
+				if !strings.Contains(client.prompts[1], name) {
+					t.Error("compression input lost the original name")
+				}
+			})
+		}
+	}
+}

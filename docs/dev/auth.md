@@ -88,6 +88,45 @@ Agents resume at their stored `current_step`. Never manually reactivate or
 delete a recovery tombstone; the migration down path intentionally refuses once
 recovery history exists.
 
+## Console V2 Install Attribution
+
+`POST /api/v2/agent-identities/provision` accepts an optional `ref` containing
+the one-shot `EF-xxxxxxxx` install token. The ref is part of both the Ed25519
+proof payload and the provision idempotency receipt. Omitting it preserves the
+existing proof format; changing it requires a new signature and cannot reuse a
+receipt for a different request.
+
+The new-Agent provision transaction resolves the ref through `install_tokens`
+and writes `agents.acquisition_channel`, plus the invitation fields when the
+entry carries an active channel code or personal invite. Attribution uses the
+server-created identity and does not depend on public install-report metadata
+or the later human email binding. The token must predate the Agent. Missing or
+unknown refs leave the Agent unattributed; malformed refs are rejected. Database
+errors roll back provision together with attribution. Attribution events are
+emitted only after commit.
+
+Same-key reprovisioning, legacy upgrades, account switching, and recovery do not
+replace an existing Agent's acquisition source. Human email verification keeps
+the provisioned Agent's attribution. The install report remains a separate
+installation event and retains its existing conversion and callback semantics.
+
+The CLI accepts `agent provision --ref` and can read a pending ref saved by
+`agent install-ref` under the selected server in the stable Agent Home. The
+saved endpoint prevents a pending ref from crossing server environments.
+
+Ref-aware installation requires CLI 0.0.43 or newer. Release the API and CLI
+compatibility changes first while preserving the existing installer, raw
+installation document, and minimum Skills CLI version. Deploy that API, then
+publish and verify CLI 0.0.43. Enable the ref-aware installer, installation
+document, and minimum CLI requirement only after both are available.
+
+API-only deployment also switches the static installer from the same release.
+Changes to the installation document or CLI configuration trigger automatic
+Skills publishing; neither API deployment nor CLI publication is automatic.
+The raw document is outside the signed bundle's minimum-CLI gate, so its
+verification step checks the required CLI and referral persistence before
+onboarding.
+
 ## Console V2 Browser Multi-account Sessions
 
 A browser can retain up to five independent Console V2 sessions. Slot zero keeps

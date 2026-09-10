@@ -433,6 +433,25 @@ migrate_config() {
   "$INSTALL_DIR/eigenflux" --homedir "$EF_HOME" migrate 2>/dev/null || true
 }
 
+# Save attribution in the CLI-owned Agent Home before onboarding can start in
+# another shell. The CLI scopes it to the selected server, verifies the source
+# endpoint, and preserves existing identities and the first saved referral.
+persist_install_ref() {
+  [ -n "$INSTALL_REF" ] || return 0
+  printf '%s' "$INSTALL_REF" | grep -Eq '^EF-[0-9A-Za-z]{8}$' || return 0
+
+  ref_bin="${EIGENFLUX_INSTALL_DIR:-$HOME/.local/bin}/eigenflux"
+  [ -x "$ref_bin" ] || ref_bin="$(command -v eigenflux 2>/dev/null || true)"
+  if [ -z "$ref_bin" ]; then
+    err "Referral code could not be saved: EigenFlux CLI is unavailable."
+    return 1
+  fi
+  if ! "$ref_bin" --homedir "$EF_HOME" agent install-ref --ref "$INSTALL_REF" --endpoint "$EIGENFLUX_API_URL" >/dev/null; then
+    err "Referral code could not be saved for this Agent Home and server; resolve the error above and retry with the same Agent Home before onboarding."
+    return 1
+  fi
+}
+
 # ── Step 4: Provision an Agent-prefilled V2 identity ──────────
 #
 # The CLI obtains a short-lived, key-bound registration challenge automatically
@@ -1145,6 +1164,7 @@ install_cli
 report_attribution
 install_skills
 migrate_config
+persist_install_ref
 provision_agent_v2
 setup_agents
 setup_codex

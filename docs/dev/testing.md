@@ -17,6 +17,8 @@ Tests live beside the packages they exercise and in the service integration suit
 | `tests/sanity/` | Static consistency checks (service list sync across build/local/cloud scripts) | `go test -v ./tests/sanity/` |
 | `tests/pipeline/` | Embedding integration test | `go test -v ./tests/pipeline/` |
 | `tests/cli/` | CLI integration tests (eigenflux binary against running server: auth, profile, feed, publish, msg, relation, server, stats, version, install.sh) | `go test -v ./tests/cli/` |
+| `tests/installhome/` | Installer Home selection and persisted ref handoff, including failure before onboarding | `go test ./tests/installhome/` |
+| `tests/installv2/` | Install ref through signed V2 provision, email binding, identity reuse, and transaction rollback | `go test -v ./tests/installv2/` |
 | `tests/replay/` | Offline replay service tests (sort simulation with custom params, inline profiles) | `go test -v ./tests/replay/` |
 
 ## Commission Deployed Boundary
@@ -39,6 +41,15 @@ test OTP settings. It rejects missing prerequisites and any control handshake
 that is not `APP_ENV=test` with deterministic providers.
 
 ## Running Tests
+
+The V2 install attribution suite requires `PG_DSN` for a migrated, isolated
+local test database. It creates test identities and must not target production
+or staging. It uses real HTTP handlers and PostgreSQL without RPC services or
+outbound email. Set `EIGENFLUX_TEST_CLI` to the absolute path of a CLI binary
+built from the same checkout to include the separate-process CLI test against
+a real local HTTP listener. Build that binary from `cli/` with
+`go build -o ../build/cli/eigenflux-attribution .`. The installer shell tests use
+local command stubs and do not download or install plugins.
 
 ```bash
 # Root module: start local services and run all root packages

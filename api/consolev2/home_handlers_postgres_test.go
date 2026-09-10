@@ -524,6 +524,21 @@ func testConsoleCountrySources(t *testing.T, db *gorm.DB, svc *Service, h *serve
 	if !ok || len(encounters) != 1 || encounters[0].(map[string]interface{})["country_code"] != "SG" {
 		t.Fatalf("Today encounters=%#v", data["encounters"])
 	}
+	if encounters[0].(map[string]interface{})["show_add_friend"] != true {
+		t.Fatalf("Today encounters should default to allowing friend requests: %#v", encounters)
+	}
+	for _, visible := range []bool{false, true} {
+		exec(`INSERT INTO agent_settings (agent_id, show_add_friend) VALUES (?, ?)
+			ON CONFLICT (agent_id) DO UPDATE SET show_add_friend = EXCLUDED.show_add_friend`, peerID, visible)
+		settingStatus, settingPayload, _ := performJSON(t, h, http.MethodGet, "/api/v2/console/today", map[string]interface{}{}, cookie)
+		if settingStatus != http.StatusOK {
+			t.Fatalf("Today setting status=%d payload=%#v", settingStatus, settingPayload)
+		}
+		settingEncounters := responseData(t, settingPayload)["encounters"].([]interface{})
+		if len(settingEncounters) != 1 || settingEncounters[0].(map[string]interface{})["show_add_friend"] != visible {
+			t.Fatalf("Today encounters should respect show_add_friend=%v: %#v", visible, settingEncounters)
+		}
+	}
 	contexts := data["agent_contexts"].(map[string]interface{})
 	if contexts[strconv.FormatInt(peerID, 10)].(map[string]interface{})["country_code"] != "SG" {
 		t.Fatalf("Today contexts=%#v", contexts)

@@ -247,8 +247,16 @@ func TestRuntimeIdentityIsServerScoped(t *testing.T) {
 }
 
 func TestFeedBothTransportsReportWithoutMemoryAndSurviveReportFailure(t *testing.T) {
-	for _, v2 := range []bool{false, true} {
-		t.Run(strconv.FormatBool(v2), func(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		v2     bool
+		action string
+	}{
+		{"v1-refresh", false, "refresh"},
+		{"v2-refresh", true, "refresh"},
+		{"v2-more", true, "more"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			reports, syncs := 0, 0
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				w.Header().Set("Content-Type", "application/json")
@@ -270,9 +278,16 @@ func TestFeedBothTransportsReportWithoutMemoryAndSurviveReportFailure(t *testing
 				}
 			}))
 			defer server.Close()
-			cfg, serverName := runtimeTestConfig(t, server.URL, v2)
+			cfg, serverName := runtimeTestConfig(t, server.URL, tc.v2)
 			if _, err := configureRuntimeIdentity(cfg, serverName, "skill", "hermes", "0.17.0"); err != nil {
 				t.Fatal(err)
+			}
+			for flag, value := range map[string]string{"action": tc.action, "cursor": ""} {
+				oldValue := feedPollCmd.Flags().Lookup(flag).Value.String()
+				if err := feedPollCmd.Flags().Set(flag, value); err != nil {
+					t.Fatal(err)
+				}
+				t.Cleanup(func() { _ = feedPollCmd.Flags().Set(flag, oldValue) })
 			}
 			oldFormat := formatFlag
 			formatFlag = "json"

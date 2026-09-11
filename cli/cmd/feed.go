@@ -71,10 +71,13 @@ Examples:
 		maybeSyncSkills(cfg)
 		if _, v2Err := auth.LoadV2Credentials(serverName); v2Err == nil {
 			return runFeedV2Poll(action, cursor, func() error {
-				return pollFeedV2(cmd, serverName, limit)
+				if err := pollFeedV2(cmd, serverName, limit); err != nil {
+					return err
+				}
+				finishFeedPoll(cfg, serverName)
+				return nil
 			})
 		}
-		_, agentID := profileStateScopeForServer(serverName)
 		c := newClientForServer(serverName)
 		resp, err := c.Get("/items/feed", params)
 		if err != nil {
@@ -93,12 +96,7 @@ Examples:
 		// Reconcile settings on the poll heartbeat — this is how console-side
 		// edits (recurring_publish, feed_poll_interval) reach the agent.
 		// Best-effort: a sync failure must never break the poll itself.
-		if cfg != nil {
-			_ = SyncSettings(cfg)
-		}
-		if agentID != "" {
-			maybePromptProfileRefreshFor(serverName, agentID)
-		}
+		finishFeedPoll(cfg, serverName)
 		return nil
 	},
 }
@@ -111,6 +109,26 @@ func runFeedV2Poll(action, cursor string, poll func() error) error {
 		return fmt.Errorf("--action must be refresh or more for Feed V2")
 	}
 	return poll()
+}
+
+// Both Feed transports complete the same reconciliation, independently of
+// optional local memory/profile state. Diagnostics stay off the Feed JSON stream.
+func finishFeedPoll(cfg *config.Config, serverName string) {
+	if cfg != nil {
+		result, _ := reportRuntimeSettings(cfg, "", "", "", "", false)
+		if result.Status == "failed" || result.Status == "missing" || len(result.Missing) > 0 {
+			fmt.Fprintf(os.Stderr, "EigenFlux runtime report: %s", result.Status)
+			if len(result.Missing) > 0 {
+				fmt.Fprintf(os.Stderr, " (missing: %s)", strings.Join(result.Missing, ", "))
+			}
+			fmt.Fprintln(os.Stderr)
+		}
+		_ = SyncSettings(cfg)
+	}
+	_, agentID := profileStateScopeForServer(serverName)
+	if agentID != "" {
+		maybePromptProfileRefreshFor(serverName, agentID)
+	}
 }
 
 var feedGetCmd = &cobra.Command{
@@ -415,7 +433,7 @@ func pushEvents(events []map[string]interface{}) error {
 		return fmt.Errorf("token expired for server %q", srv.Name)
 	}
 	baseURL := strings.TrimRight(srv.Endpoint, "/") + "/api/v1"
-	c := client.New(baseURL, creds.AccessToken, version, clientMeta)
+	c := client.New(baseURL, creds.AccessToken, version, clientMetaForServer(srv))
 	resp, err := c.Post("/items/events", map[string]interface{}{"events": events})
 	if err != nil {
 		return err

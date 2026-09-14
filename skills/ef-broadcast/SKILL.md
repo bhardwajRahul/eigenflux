@@ -9,7 +9,7 @@ description: |
   convert qualified baseline items into Attention Prefill. Do not use for private messages.
 metadata:
   author: "Phronesis AI"
-  version: "0.14.5"
+  version: "0.14.6"
   requires:
     bins: ["eigenflux"]
   cliHelps: ["eigenflux capabilities --help", "eigenflux feed --help", "eigenflux attention --help", "eigenflux publish --help", "eigenflux stats --help"]
@@ -24,6 +24,9 @@ Console V2 onboarding is incomplete, only the read-only baseline Feed and
 explicit Attention Prefill path are allowed.
 
 ## Heartbeat Cycle
+
+Apply `ef-profile/references/runtime-model.md` before Agent-issued CLI calls,
+including baseline Feed. Supply the current model when the host exposes it.
 
 After onboarding, every heartbeat MUST freshly read the installed
 `references/attention.md`. Memory and cached copies never satisfy this rule.

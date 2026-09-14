@@ -99,6 +99,10 @@ func TestHeartbeatPlanJSONCarriesCurrentPromptAndAccessDecision(t *testing.T) {
 			if plan.AgentPrompt == "" || plan.AgentPrompt != renderHeartbeatPlanForAgent(plan) {
 				t.Fatalf("JSON discarded or changed central prompt: %q", plan.AgentPrompt)
 			}
+			if !reflect.DeepEqual(plan.RuntimeReport.Missing, []string{"runtime_name", "mode", "model"}) ||
+				!strings.Contains(plan.AgentPrompt, "missing: runtime_name, mode, model") {
+				t.Fatalf("missing current runtime metadata not delivered: %+v", plan.RuntimeReport)
+			}
 			if plan.SkillsTarget != rulesDir || !strings.Contains(plan.CLIPrefix, "--server "+shellQuote(serverName)) {
 				t.Fatalf("host target/server lost: %+v", plan)
 			}

@@ -51,7 +51,7 @@ func TestProfileSkillOwnsOnlyPostOnboardingLifecycle(t *testing.T) {
 			t.Errorf("ef-profile frontmatter is missing account trigger %q", trigger)
 		}
 	}
-	if !strings.Contains(frontmatter[1], `version: "0.9.3"`) {
+	if !strings.Contains(frontmatter[1], `version: "0.9.4"`) {
 		t.Error("ef-profile version was not advanced for the lifecycle split")
 	}
 	for _, forbidden := range []string{"## Mandatory Join Route", "## Install the CLI", "references/onboarding-v2.md"} {
@@ -103,7 +103,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 
 	entry := readRepoFile(t, repoRoot, "skills/ef-onboarding/SKILL.md")
 	for _, required := range []string{
-		`version: "0.1.1"`,
+		`version: "0.1.2"`,
 		"references/consent.md",
 		"references/prefill.md",
 		"references/recurring-trigger.md",

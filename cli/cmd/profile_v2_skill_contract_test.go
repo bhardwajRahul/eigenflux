@@ -51,7 +51,7 @@ func TestProfileSkillOwnsOnlyPostOnboardingLifecycle(t *testing.T) {
 			t.Errorf("ef-profile frontmatter is missing account trigger %q", trigger)
 		}
 	}
-	if !strings.Contains(frontmatter[1], `version: "0.9.2"`) {
+	if !strings.Contains(frontmatter[1], `version: "0.9.3"`) {
 		t.Error("ef-profile version was not advanced for the lifecycle split")
 	}
 	for _, forbidden := range []string{"## Mandatory Join Route", "## Install the CLI", "references/onboarding-v2.md"} {

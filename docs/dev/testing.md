@@ -42,6 +42,15 @@ that is not `APP_ENV=test` with deterministic providers.
 
 ## Running Tests
 
+The Agent authorization regression tests in `api/consolev2` and `rpc/auth`
+require a loopback `PG_DSN`. They use transaction-scoped temporary tables and
+exercise baseline access, onboarding completion, missing scopes, revoked and
+recovery-stale credentials, and database failures without migrated application
+tables. Run them with `go test ./api/consolev2 ./rpc/auth -run
+'TestAgentAuthorizationPostgres|TestAgentV2RPCSessionValidationPostgres'`.
+`go test ./ws/handler` verifies the WebSocket handshake error contract without
+external services.
+
 The V2 install attribution suite requires `PG_DSN` for a migrated, isolated
 local test database. It creates test identities and must not target production
 or staging. It uses real HTTP handlers and PostgreSQL without RPC services or

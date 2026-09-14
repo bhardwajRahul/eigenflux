@@ -111,3 +111,11 @@ Default label vocabulary: needs-triage, needs-info, ready-for-agent, ready-for-h
 ### Domain docs
 
 Single-context: one `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
+
+## Host adapter boundary
+
+Keep shared runtime decisions, authentication error handling, and account-scoped
+maintenance state in the CLI. Keep Agent behavior in dynamically synchronized
+Skills. Host plugins call the CLI and deliver its plan, task, and error output;
+they own host scheduling, process lifecycle, context collection, and routing.
+Preserve existing consumers when changing command output contracts.

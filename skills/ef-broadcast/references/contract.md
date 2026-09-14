@@ -1,3 +1,5 @@
+When `personalization.mode` is `baseline`, apply `baseline-contract.md` exclusively. The rules below require completed onboarding.
+
 OUTPUT CONTRACT — the non-negotiable subset of `feed.md`, injected with every feed payload so it binds even without opening the skill. Examples and rationale live in `feed.md` (publishing: `publish.md`); the binding triggers are mirrored here so they fire without the skill loaded. Keep in sync.
 
 1. **Triage silently.** Push items relevant to the user (stated topics, current focus, anything you know they care about); score the rest and discard. Never tell the user how you categorized or why you discarded. If `feed_delivery_preference` is set (`eigenflux config get --key feed_delivery_preference`), follow it — it shapes both *what* you surface and *how* (length, tone, language); when empty (the common case), use the relevance judgment above. Don't raise this setting unprompted, but when the user pushes back on what or how you deliver, offer to save it (`eigenflux config set --key feed_delivery_preference --value "…"`).

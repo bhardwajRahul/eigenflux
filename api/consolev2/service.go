@@ -570,11 +570,12 @@ func (s *Service) setCSRFCookie(c *app.RequestContext, value string, maxAge int)
 }
 
 type agentPrincipal struct {
-	SessionID   int64          `gorm:"column:session_id"`
-	AgentID     int64          `gorm:"column:agent_id"`
-	PrincipalID int64          `gorm:"column:principal_id"`
-	Status      string         `gorm:"column:status"`
-	Scopes      pq.StringArray `gorm:"column:scopes;type:text[]"`
+	SessionID       int64          `gorm:"column:session_id"`
+	AgentID         int64          `gorm:"column:agent_id"`
+	PrincipalID     int64          `gorm:"column:principal_id"`
+	Status          string         `gorm:"column:status"`
+	Scopes          pq.StringArray `gorm:"column:scopes;type:text[]"`
+	OnboardingState string         `gorm:"column:onboarding_state"`
 }
 
 func (s *Service) agentAuth(requiredScope string) app.HandlerFunc {
@@ -594,10 +595,11 @@ func (s *Service) agentAuthAny(requiredScopes ...string) app.HandlerFunc {
 		token := strings.TrimPrefix(header, "Bearer ")
 		var principal agentPrincipal
 		now := time.Now().UnixMilli()
-		err := s.db.Raw(`SELECT cs.session_id, p.agent_id, p.principal_id, p.status, cs.scopes
+		err := s.db.Raw(`SELECT cs.session_id, p.agent_id, p.principal_id, p.status, cs.scopes, o.state AS onboarding_state
 				FROM agent_credential_sessions cs
 				JOIN agent_principals p ON p.principal_id = cs.principal_id
 				JOIN agents a ON a.agent_id = p.agent_id
+				LEFT JOIN agent_onboarding_v2 o ON o.agent_id = p.agent_id
 				WHERE cs.access_token_hash = ? AND cs.audience = 'agent_v2'
 				  AND cs.revoked_at IS NULL AND cs.expires_at > ? AND cs.access_refresh_required = FALSE
 				  AND p.revoked_at IS NULL AND p.status IN ('limited','active')
@@ -610,8 +612,23 @@ func (s *Service) agentAuthAny(requiredScopes ...string) app.HandlerFunc {
 				break
 			}
 		}
-		if err != nil || principal.AgentID == 0 || !hasRequiredScope {
-			fail(c, http.StatusUnauthorized, "AGENT_AUTH_INVALID", "Agent V2 token is expired or lacks the required scope", nil)
+		if err != nil {
+			fail(c, http.StatusServiceUnavailable, "AGENT_AUTH_UNAVAILABLE", "Agent V2 authentication is temporarily unavailable", nil)
+			c.Abort()
+			return
+		}
+		if principal.AgentID == 0 {
+			fail(c, http.StatusUnauthorized, "AGENT_AUTH_INVALID", "Agent V2 token is invalid or expired", nil)
+			c.Abort()
+			return
+		}
+		if !hasRequiredScope {
+			details := map[string]interface{}{"required_scopes": requiredScopes, "onboarding_state": principal.OnboardingState}
+			if principal.OnboardingState != "completed" {
+				fail(c, http.StatusConflict, "ONBOARDING_REQUIRED", "this operation requires completed onboarding; read-only baseline Feed remains available", details)
+			} else {
+				fail(c, http.StatusForbidden, "AGENT_SCOPE_REQUIRED", "Agent V2 session lacks the required scope", details)
+			}
 			c.Abort()
 			return
 		}

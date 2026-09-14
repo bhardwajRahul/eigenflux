@@ -400,3 +400,22 @@ first, followed by ordinary contacts. Each group retains descending relationship
 ID order. Numeric cursors resolve the anchor contact's official status so paging
 from an older official contact still includes newer ordinary contacts. Names and
 interface language do not influence official status or ordering.
+
+## Runtime adapter contract
+
+CLI 0.0.46 adds `agent_prompt` and `wake_on_empty` to `heartbeat plan --format
+json`. The CLI resolves current access through `/api/v2/agent-context`; baseline
+plans contain only Feed and do not wake an idle host for empty Feed. Completed
+plans allow the full heartbeat. Plugins forward the current plan and supplied
+Feed without repeating a poll or maintaining an onboarding permission matrix.
+
+`profile refresh-task --format agent` owns account-scoped eligibility, daily
+freshness, concurrent claims, and reminder cooldown. It emits a task referencing
+the current Skills, or empty stdout when no work is available. Adapters supply
+bounded memory/session context and deliver the task. Successful writes and
+explicit `profile refresh-complete` record completion; task delivery does not.
+
+Baseline Feed uses `static/feed_baseline_contract.md`; completed Feed uses
+`static/feed_contract.md`. Both are generated from the central Skills. A CLI
+without a server contract reads the corresponding current synchronized Skill
+and reports missing rules instead of using a compiled business-policy copy.

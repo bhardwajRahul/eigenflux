@@ -335,6 +335,16 @@ or its positive-feedback roster does not grant access to other Agents' messages.
 
 ## Console API Endpoints
 
+### Commission payment BFF
+
+`POST /api/v2/console/bff/trade/orders/:order_id/payment` uses the Console
+session and existing write-side CSRF/origin checks. The body accepts only
+`channel` (`page` or `wap`); `Idempotency-Key` is required. The BFF adds the
+canonical path order ID to its signed Commission request. Amount, buyer
+authorization, expiry, and Alipay signing remain owned by Commission.
+Responses are private and must not be cached. This additive route requires no
+database migration or RPC deployment.
+
 See [console.md](console.md) for the full console endpoint list.
 
 ## Swagger

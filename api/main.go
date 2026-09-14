@@ -419,6 +419,7 @@ func registerConsoleV2BusinessBFF(h *server.Hertz, service *consolev2.Service, c
 	read("trade/commissions", trade.TradeCommissions)
 	read("trade/orders", trade.TradeOrders)
 	read("trade/orders/:order_id", trade.TradeOrder)
+	write(http.MethodPost, "trade/orders/:order_id/payment", trade.TradeOrderPayment)
 	read("earnings/summary", trade.EarningsSummary)
 	read("earnings/records", trade.EarningsRecords)
 	read("payout-method", trade.PayoutMethod)

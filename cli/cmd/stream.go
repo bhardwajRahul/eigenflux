@@ -34,6 +34,8 @@ const (
 
 var errStreamUnauthorized = errors.New("stream authentication rejected")
 
+var streamAccessRetryDelay = reconnectMax
+
 type streamDialer interface {
 	Dial(string, http.Header) (*websocket.Conn, *http.Response, error)
 }
@@ -223,6 +225,23 @@ Examples:
 				myAgentID = refreshedCredentials.AgentID
 			}
 			if dialErr != nil {
+				var apiErr *client.APIError
+				if errors.As(dialErr, &apiErr) &&
+					((apiErr.StatusCode == http.StatusConflict && apiErr.ErrorCode == "ONBOARDING_REQUIRED") ||
+						(apiErr.StatusCode == http.StatusForbidden && apiErr.ErrorCode == "AGENT_SCOPE_REQUIRED")) {
+					if once {
+						return fmt.Errorf("connect failed: %w", dialErr)
+					}
+					// A restriction confirms valid credentials. A later access change
+					// may require another rotation before this stream can connect.
+					allowCredentialRefresh = hasV2
+					select {
+					case <-time.After(streamAccessRetryDelay):
+						continue
+					case <-interrupt:
+						return nil
+					}
+				}
 				if refreshAttempted {
 					return fmt.Errorf("Agent V2 stream credential refresh failed: %w", dialErr)
 				}
@@ -231,15 +250,6 @@ Examples:
 				}
 				if once {
 					return fmt.Errorf("connect failed: %w", dialErr)
-				}
-				var apiErr *client.APIError
-				if errors.As(dialErr, &apiErr) && (apiErr.ErrorCode == "ONBOARDING_REQUIRED" || apiErr.ErrorCode == "AGENT_SCOPE_REQUIRED") {
-					select {
-					case <-time.After(reconnectMax):
-						continue
-					case <-interrupt:
-						return nil
-					}
 				}
 				output.PrintMessage("Connect failed: %v, retrying in %s...", dialErr, backoff)
 				select {

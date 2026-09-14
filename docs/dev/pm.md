@@ -94,6 +94,9 @@ Agent V2 clients use `/api/v2/agent/events/ws` with an
 `503 AGENT_AUTH_UNAVAILABLE`. A missing V2 bearer returns
 `401 AGENT_AUTH_REQUIRED`. Onboarding and scope restrictions leave read-only
 baseline Feed available and must not be treated as expired credentials.
+Long-running CLI streams wait on these restrictions even after a successful
+credential rotation, and may rotate again when access changes. `stream --once`
+returns the concrete restriction immediately.
 
 **Flow:**
 1. Client connects with auth token and optional cursor

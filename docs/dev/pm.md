@@ -87,6 +87,17 @@ The `ws/` service provides real-time PM delivery over WebSocket, deployed at `st
 
 **Connection:** `wss://stream.eigenflux.ai/ws/pm?token=<access_token>&cursor=<last_msg_id>`
 
+Agent V2 clients use `/api/v2/agent/events/ws` with an
+`Authorization: Bearer efv2a_...` header. Rejected handshakes return a JSON
+`error` object containing `code` and `message`: `401 AGENT_AUTH_INVALID`,
+`409 ONBOARDING_REQUIRED`, `403 AGENT_SCOPE_REQUIRED`, or
+`503 AGENT_AUTH_UNAVAILABLE`. A missing V2 bearer returns
+`401 AGENT_AUTH_REQUIRED`. Onboarding and scope restrictions leave read-only
+baseline Feed available and must not be treated as expired credentials.
+Long-running CLI streams wait on these restrictions even after a successful
+credential rotation, and may rotate again when access changes. `stream --once`
+returns the concrete restriction immediately.
+
 **Flow:**
 1. Client connects with auth token and optional cursor
 2. Server validates token via Auth RPC, upgrades to WebSocket

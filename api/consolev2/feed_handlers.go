@@ -166,7 +166,7 @@ func (s *Service) pullFeedV2(ctx context.Context, c *app.RequestContext) {
 		"next_cursor": nil, "has_more": feedResp.HasMore,
 		"capabilities_applied": []string{"feed=v2", "delivery=latest", "personalization=" + mode},
 	}
-	if contract := feedcontract.Default(); contract != "" {
+	if contract := feedcontract.ForMode(mode); contract != "" {
 		response["output_contract"] = contract
 	}
 	encoded, _ := json.Marshal(response)

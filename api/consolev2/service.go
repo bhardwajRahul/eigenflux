@@ -358,9 +358,6 @@ func (s *Service) Register(h *server.Hertz) {
 	h.GET("/api/v2/console/account-switch", s.consoleAuth(false), s.getCLIAccountSwitch)
 	h.POST("/api/v2/console/account-switch/confirm", s.consoleAuth(true), s.confirmCLIAccountSwitch)
 	h.DELETE("/api/v2/console/account-switch", s.consoleAuth(true), s.cancelCLIAccountSwitch)
-	h.GET("/api/v2/console/notifications/pending", s.consoleAuth(false), s.requireCompleted, s.listPendingNotifications)
-	h.POST("/api/v2/console/notifications/ack", s.consoleAuth(true), s.requireCompleted, s.ackPendingNotifications)
-
 	h.PUT("/api/v2/agents/me/onboarding-draft", s.agentAuth("onboarding:write"), s.putOnboardingDraft)
 	h.PUT("/api/v2/console/onboarding-draft", s.consoleAuth(true), s.putOnboardingDraft)
 	h.GET("/api/v2/agents/me/onboarding-draft", s.consoleAuth(false), s.getOnboardingDraft)

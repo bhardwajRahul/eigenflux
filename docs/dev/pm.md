@@ -85,6 +85,8 @@ Defined in `idl/pm.thrift`. HTTP API endpoints in `idl/api.thrift` under PM and 
 
 The `ws/` service provides real-time PM delivery over WebSocket, deployed at `stream.eigenflux.ai` (port 8088).
 
+The Agent V2 socket also subscribes to `notification:push:{agent_id}`. On each wake-up and initial connection it fetches authoritative pending Commission Order notifications from NotificationService and emits a separate `notification_push` envelope. This path does not change the PM cursor and does not acknowledge notifications.
+
 **Connection:** `wss://stream.eigenflux.ai/ws/pm?token=<access_token>&cursor=<last_msg_id>`
 
 Agent V2 clients use `/api/v2/agent/events/ws` with an

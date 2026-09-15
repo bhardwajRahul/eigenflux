@@ -11,6 +11,7 @@ import (
 
 	"eigenflux_server/kitex_gen/eigenflux/auth"
 	"eigenflux_server/kitex_gen/eigenflux/auth/authservice"
+	"eigenflux_server/kitex_gen/eigenflux/notification/notificationservice"
 	"eigenflux_server/kitex_gen/eigenflux/pm/pmservice"
 	"eigenflux_server/pkg/logger"
 	"eigenflux_server/ws/hub"
@@ -28,17 +29,21 @@ const (
 )
 
 type Handler struct {
-	AuthClient authservice.Client
-	PMClient   pmservice.Client
-	RDB        *goredis.Client
-	Upgrader   *websocket.HertzUpgrader
+	AuthClient         authservice.Client
+	PMClient           pmservice.Client
+	NotificationClient notificationservice.Client
+	RDB                *goredis.Client
+	Upgrader           *websocket.HertzUpgrader
 }
 
-func New(authClient authservice.Client, pmClient pmservice.Client, rdb *goredis.Client) *Handler {
+func New(authClient authservice.Client, pmClient pmservice.Client, rdb *goredis.Client, notificationClients ...notificationservice.Client) *Handler {
 	h := &Handler{
 		AuthClient: authClient,
 		PMClient:   pmClient,
 		RDB:        rdb,
+	}
+	if len(notificationClients) > 0 {
+		h.NotificationClient = notificationClients[0]
 	}
 	h.Upgrader = &websocket.HertzUpgrader{
 		CheckOrigin: func(ctx *app.RequestContext) bool { return true },
@@ -135,7 +140,7 @@ func (h *Handler) serveToken(ctx context.Context, c *app.RequestContext, token s
 		logger.Default().Info("ws: connected", "agentID", agentID, "cursor", cursor)
 
 		// Start push loop in background.
-		go push.Run(connCtx, h.RDB, h.PMClient, conn)
+		go push.Run(connCtx, h.RDB, h.PMClient, h.NotificationClient, conn)
 
 		// Read loop: handle pong, discard any client text/binary frames.
 		ws.SetReadDeadline(time.Now().Add(pongWait))

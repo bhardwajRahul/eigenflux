@@ -2,6 +2,8 @@
 
 ## Async Messaging
 
+When `ENABLE_COMMISSION_ORDER_NOTIFICATIONS=true`, `CommissionOrderNotificationConsumer` reads `COMMISSION_NOTIFICATION_STREAM` with its dedicated retry-aware consumer group and DLQ. Durable inbox insertion precedes the online wake-up; duplicate stream delivery does not create or signal a second logical notification. Invalid facts are dead-lettered, while database failures remain retryable.
+
 - Redis Stream names: `stream:profile:update`, `stream:item:publish`, `stream:item:stats`, `stream:replay:log`, `stream:followup:label`
 - Consumer groups: `cg:profile:update`, `cg:item:publish`, `cg:item:stats`, `cg:replay:log`, `cg:followup:label`, `cg:official:welcome`
 - `stream:profile:update` has two independent groups: `cg:profile:update` (keyword extraction) and `cg:official:welcome` (official-account onboarding welcome)

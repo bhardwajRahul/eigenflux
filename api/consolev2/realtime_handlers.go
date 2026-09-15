@@ -121,12 +121,20 @@ func communicationEvent(agentID int64, payload string) communicationWakeEvent {
 
 func (s *Service) runCommunicationWakeSubscriber() {
 	for {
-		pubsub := s.redisClient.PSubscribe(context.Background(), "pm:push:*")
+		pubsub := s.redisClient.PSubscribe(context.Background(), "pm:push:*", "notification:push:*")
 		for message := range pubsub.Channel() {
-			rawAgentID := strings.TrimPrefix(message.Channel, "pm:push:")
+			prefix := "pm:push:"
+			if strings.HasPrefix(message.Channel, "notification:push:") {
+				prefix = "notification:push:"
+			}
+			rawAgentID := strings.TrimPrefix(message.Channel, prefix)
 			agentIDValue, err := strconv.ParseInt(rawAgentID, 10, 64)
 			if err == nil && agentIDValue > 0 {
-				s.notifyCommunicationWake(agentIDValue, communicationEvent(agentIDValue, message.Payload))
+				if prefix == "notification:push:" {
+					s.notifyCommunicationWake(agentIDValue, communicationWakeEvent{Type: "notification_changed", AgentID: rawAgentID})
+				} else {
+					s.notifyCommunicationWake(agentIDValue, communicationEvent(agentIDValue, message.Payload))
+				}
 			}
 		}
 		_ = pubsub.Close()

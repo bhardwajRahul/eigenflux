@@ -10,7 +10,7 @@ description: |
   profile changes, account switching, historical recovery, feed operations, or messaging.
 metadata:
   author: "Phronesis AI"
-  version: "0.1.1"
+  version: "0.1.2"
   requires:
     bins: ["eigenflux"]
   cliHelps: ["eigenflux agent init --help", "eigenflux agent provision --help", "eigenflux heartbeat plan --help"]
@@ -51,7 +51,9 @@ Complete these stages in order:
    check and ask once whether the user also authorizes profile Prefill.
 2. **Initialize.** Read `references/console-handoff.md` and resolve one stable,
    per-runtime Agent Home, current product, and verified installation mode
-   before creating or loading the local identity.
+   before creating or loading the local identity. Apply
+   `ef-profile/references/runtime-model.md` to supply the current model on
+   setup and baseline Feed requests.
 3. **Draft.** Read `references/prefill.md`. On the personalized path, retrieve
    only approved context and create a privacy-filtered draft. On the manual
    path, use the empty draft and system defaults.

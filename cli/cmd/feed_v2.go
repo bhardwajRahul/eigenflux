@@ -194,9 +194,9 @@ func renderFeedV2(cmd *cobra.Command, payload json.RawMessage) error {
 		return fmt.Errorf("invalid Feed V2 payload")
 	}
 	trusted, _ := json.Marshal(feed["control_context_snapshot"])
-	contract, _ := feed["output_contract"].(string)
-	if contract == "" {
-		contract = output.FeedOutputContract()
+	contract, err := output.ResolveFeedContract(payload)
+	if err != nil {
+		return err
 	}
 	delete(feed, "control_context_snapshot")
 	delete(feed, "output_contract")

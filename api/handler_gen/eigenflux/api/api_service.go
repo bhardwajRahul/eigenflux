@@ -3308,6 +3308,7 @@ func GetMySettings(ctx context.Context, c *app.RequestContext) {
 		"mode":                     settings.Mode,
 		"runtime_name":             settings.RuntimeName,
 		"runtime_version":          settings.RuntimeVersion,
+		"model":                    settings.Model,
 		"last_activity_at":         settings.LastActivityAt,
 		"lang":                     settings.Lang,
 		"updated_at":               settings.UpdatedAt,

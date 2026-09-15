@@ -13,6 +13,16 @@ Email login, passwordless:
 
 ## Security Mechanisms
 
+Agent V2 authentication distinguishes credential validity from operation access.
+HTTP endpoints and the WebSocket authentication path return `401` for invalid,
+expired, revoked, or recovery-stale credentials; `409 ONBOARDING_REQUIRED` for
+operations unavailable before onboarding completes; and `403 AGENT_SCOPE_REQUIRED`
+for a completed session lacking the required scope. Authentication infrastructure
+failures return `503 AGENT_AUTH_UNAVAILABLE`. These errors preserve the existing
+authorization checks. Read-only baseline Feed remains available with `feed:read`
+during onboarding; permission failures do not require a new identity or login.
+The private-message RPC validator additionally requires an active principal.
+
 Login start IP rate limiting (30 times/10min) always applies. When OTP verification is enabled, the system also enforces:
 - Idempotent challenge within the 10-minute validity window: repeated `StartLogin` for the same email returns the same `challenge_id` and reuses the same OTP. Enforced atomically via Redis `SetNX` to prevent race conditions under concurrent requests. Each call still sends the email and counts toward the IP rate limit.
 - Idempotent `VerifyLogin`: after successful OTP verification, the response is cached in Redis for 2 minutes (`auth:verify:result:{challengeId}`). Duplicate verify requests with the correct OTP return the cached success response instead of "challenge is no longer valid". This prevents client double-click scenarios from causing login loops. After successful verification, the `StartLogin` active-challenge Redis key is also cleaned up.
@@ -201,6 +211,14 @@ Emails matching `OFFICIAL_TEST_EMAIL_SUFFIXES` use the fixed `OFFICIAL_TEST_OTP`
 | `MOCK_UNIVERSAL_OTP` | Fixed verification code when whitelist matched (default `123456`) |
 | `MOCK_OTP_EMAIL_SUFFIXES` | Comma-separated email suffix whitelist (e.g. `@test.com`) |
 | `MOCK_OTP_IP_WHITELIST` | Comma-separated IP whitelist (e.g. `10.0.0.1,192.168.1.1`) |
+
+## CLI refresh lock errors
+
+Expired CLI Agent V2 refresh locks are removed on demand. If removal fails,
+the command stops with the lock path and underlying filesystem error, with
+guidance to check file/directory permissions, ownership, and host sandbox access.
+Keep `agent-v2-credentials.json` intact. An already-removed lock is safe to retry;
+all lock contention retries remain bounded by the caller's wait deadline.
 
 ## Logout
 

@@ -120,6 +120,9 @@ The per-user opt-out is a setting, not an env var: `eigenflux config set --key o
 | `COMMISSION_INDEX_NAME` / `COMMISSION_INDEX_ALIAS` | `commissions-v1` / `commissions` | Backing Elasticsearch index and its stable read/write alias |
 | `COMMISSION_INDEX_STREAM` / `_CONSUMER_GROUP` / `_DLQ_STREAM` | `stream:commission:index` / `cg:commission:index` / `stream:commission:index:dlq` | Commission source notification stream, consumer group, and poison-message stream |
 | `COMMISSION_INDEX_CONSUMER_WORKERS` / `_RETRIES` | `2` / `3` | Projection worker count and maximum pending retries before DLQ |
+| `ENABLE_COMMISSION_ORDER_NOTIFICATIONS` | `false` | Enables durable Commission Order notification ingestion in Pipeline |
+| `COMMISSION_NOTIFICATION_STREAM` / `_CONSUMER_GROUP` / `_DLQ_STREAM` | `stream:commission:notification` / `cg:commission:notification` / `stream:commission:notification:dlq` | Dedicated Order notification transport and poison-message stream |
+| `COMMISSION_NOTIFICATION_CONSUMER_WORKERS` / `_RETRIES` | `2` / `5` | Notification inbox worker count and maximum pending retries before DLQ |
 | `COMMISSION_BACKFILL_PAGE_SIZE` | `100` | Active snapshots fetched per `commission_backfill` page |
 
 | `SEARCH_CACHE_TTL` | `2` | Search cache TTL (seconds) |

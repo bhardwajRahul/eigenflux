@@ -42,6 +42,7 @@ import (
 	"eigenflux_server/pkg/itemstats"
 	"eigenflux_server/pkg/logger"
 	"eigenflux_server/pkg/mq"
+	"eigenflux_server/pkg/notificationpayload"
 	"eigenflux_server/pkg/reqinfo"
 	"eigenflux_server/pkg/runtimeidentity"
 	"eigenflux_server/pkg/stats"
@@ -115,6 +116,10 @@ func fetchPendingNotifications(ctx context.Context, agentID int64) ([]*notificat
 		logger.Ctx(ctx).Error("NotificationService.ListPending error", "agentID", agentID, "err", err)
 		return nil, nil
 	}
+	if pendingResp == nil {
+		logger.Ctx(ctx).Warn("NotificationService.ListPending returned nil response", "agentID", agentID)
+		return nil, nil
+	}
 	if pendingResp.BaseResp != nil && pendingResp.BaseResp.Code != 0 {
 		logger.Ctx(ctx).Warn("NotificationService.ListPending returned error code", "code", pendingResp.BaseResp.Code, "agentID", agentID, "msg", pendingResp.BaseResp.Msg)
 		return nil, nil
@@ -122,6 +127,9 @@ func fetchPendingNotifications(ctx context.Context, agentID int64) ([]*notificat
 
 	jsonList := make([]map[string]interface{}, 0, len(pendingResp.Notifications))
 	for _, n := range pendingResp.Notifications {
+		if n == nil {
+			continue
+		}
 		item := map[string]interface{}{
 			"notification_id": strconv.FormatInt(n.NotificationId, 10),
 			"type":            n.Type,
@@ -135,6 +143,17 @@ func fetchPendingNotifications(ctx context.Context, agentID int64) ([]*notificat
 		}
 		if n.FriendUid != nil {
 			item["friend_uid"] = strconv.FormatInt(*n.FriendUid, 10)
+		}
+		if n.PayloadJson != nil && json.Valid([]byte(*n.PayloadJson)) {
+			payload := json.RawMessage(*n.PayloadJson)
+			if n.SourceType == "commission_order" {
+				normalized, normalizeErr := notificationpayload.NormalizeCommissionOrderIDs(*n.PayloadJson)
+				if normalizeErr != nil {
+					continue
+				}
+				payload = normalized
+			}
+			item["payload"] = payload
 		}
 		jsonList = append(jsonList, item)
 	}
@@ -154,6 +173,11 @@ func ackNotifications(agentID int64, pending []*notificationrpc.PendingNotificat
 		// Persistent notifications (source_type=system, type=system) are
 		// returned on every refresh; skip ack to avoid unbounded DB writes.
 		if n.SourceType == "system" && n.Type == "system" {
+			continue
+		}
+		// Commission Order notifications require an explicit Agent-scoped ACK
+		// after client processing. A successful Feed response is not an ACK.
+		if n.SourceType == "commission_order" {
 			continue
 		}
 		items = append(items, &notificationrpc.AckNotificationItem{

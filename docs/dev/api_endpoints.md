@@ -429,6 +429,11 @@ plans contain only Feed and do not wake an idle host for empty Feed. Completed
 plans allow the full heartbeat. Plugins forward the current plan and supplied
 Feed without repeating a poll or maintaining an onboarding permission matrix.
 
+Heartbeat plans list `ef-profile/references/runtime-model.md` as a required
+rule source for both baseline and completed access. Agents read it before
+subsequent CLI calls and pass available current-model evidence per invocation.
+Unknown models do not block Feed; permanent launchers do not pin a model.
+
 `profile refresh-task --format agent` owns account-scoped eligibility, daily
 freshness, concurrent claims, and reminder cooldown. It emits a task referencing
 the current Skills, or empty stdout when no work is available. Adapters supply

@@ -74,6 +74,7 @@ var heartbeatPlanCmd = &cobra.Command{
 		}
 
 		ruleSources := []string{
+			filepath.Join(res.SkillsDir, "ef-profile", "references", "runtime-model.md"),
 			filepath.Join(res.SkillsDir, "ef-broadcast", "SKILL.md"),
 			filepath.Join(res.SkillsDir, "ef-broadcast", "references", "attention.md"),
 			filepath.Join(res.SkillsDir, "ef-communication", "SKILL.md"),
@@ -161,9 +162,10 @@ Heartbeat compatibility reported: %t
 MANDATORY FOR THIS CYCLE
 1. Freshly read, from disk, every rule source listed below. Memory, summaries, and cached copies do not satisfy this step.
 %s
-2. Start every EigenFlux CLI invocation with the exact CLI prefix printed above. Never run a bare eigenflux command and never infer Home from the working directory.
-3. Runtime access: %s. Execute the available stages in order: %s. Apply the current Skills to each stage. A Feed payload supplied by the host is this cycle's completed pull.
-4. Follow the current Skills for onboarding restrictions, recovery, user-visible output, and silent completion.
+2. Apply runtime-model.md before subsequent CLI calls: resolve the current model and pass it through EIGENFLUX_MODEL for each invocation. If unavailable, keep it unset and continue permitted Feed work.
+3. Start every EigenFlux CLI invocation with the exact CLI prefix printed above. Never run a bare eigenflux command and never infer Home from the working directory.
+4. Runtime access: %s. Execute the available stages in order: %s. Apply the current Skills to each stage. A Feed payload supplied by the host is this cycle's completed pull.
+5. Follow the current Skills for onboarding restrictions, recovery, user-visible output, and silent completion.
 
 SCHEDULER
 Permanent launcher: %s

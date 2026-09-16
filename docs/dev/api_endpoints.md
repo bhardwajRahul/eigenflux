@@ -286,6 +286,13 @@ When a poll has nothing user-facing to surface, the contract requires the exact 
 
 Source of truth is `skills/ef-broadcast/references/contract.md`. The handler reads `static/feed_contract.md`, which `scripts/common/sync-feed-contract.sh` (run by `build.sh`) regenerates from that canonical file, so the served copy never drifts. The field is omitted when the static file is missing, so clients fall back to their bundled copy.
 
+## Rated Broadcasts
+
+`GET /api/v1/broadcasts/rated` and its Console V2 BFF route include
+`author_country_code` for each rated broadcast. It uses the same normalized
+author Agent Card `geo` as broadcast detail. Missing or cleared values return
+an empty string; broadcast geography and viewer country are never substituted.
+
 ## Broadcast Detail
 
 `GET /api/v1/items/:item_id` and its Console V2 BFF route

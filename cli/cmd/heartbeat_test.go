@@ -34,6 +34,9 @@ func TestRenderHeartbeatPlanForAgentIsThinAndCurrent(t *testing.T) {
 		"commands → feed → attention → communication → publish → settings_report",
 		"CLI prefix for every EigenFlux command in this cycle: eigenflux --homedir /tmp/home",
 		"Never run a bare eigenflux command",
+		"Apply runtime-model.md before subsequent CLI calls",
+		"pass it through EIGENFLUX_MODEL for each invocation",
+		"If unavailable, keep it unset and continue permitted Feed work",
 		"Apply the current Skills to each stage",
 		"A Feed payload supplied by the host is this cycle's completed pull",
 		"Follow the current Skills for onboarding restrictions, recovery, user-visible output, and silent completion",
@@ -103,6 +106,13 @@ func TestHeartbeatPlanJSONCarriesCurrentPromptAndAccessDecision(t *testing.T) {
 				!strings.Contains(plan.AgentPrompt, "missing: runtime_name, mode, model") {
 				t.Fatalf("missing current runtime metadata not delivered: %+v", plan.RuntimeReport)
 			}
+			modelRule := filepath.Join(rulesDir, "ef-profile", "references", "runtime-model.md")
+			if len(plan.RuleSources) == 0 || plan.RuleSources[0] != modelRule || !strings.Contains(plan.AgentPrompt, modelRule) {
+				t.Fatalf("current model rule absent from required sources: %+v", plan.RuleSources)
+			}
+			if strings.Contains(plan.SchedulerLauncher, "EIGENFLUX_MODEL") {
+				t.Fatal("scheduler must not freeze the current model")
+			}
 			if plan.SkillsTarget != rulesDir || !strings.Contains(plan.CLIPrefix, "--server "+shellQuote(serverName)) {
 				t.Fatalf("host target/server lost: %+v", plan)
 			}
@@ -113,10 +123,11 @@ func TestHeartbeatPlanJSONCarriesCurrentPromptAndAccessDecision(t *testing.T) {
 func TestHeartbeatPlanFailsWithoutCurrentAccessOrRules(t *testing.T) {
 	for _, tc := range []struct {
 		name, body   string
-		missingRules bool
+		missingRules string
 	}{
-		{"invalid context", `{"code":0,"data":{}}`, false},
-		{"missing rules", `{"code":0,"data":{"context_revision":1}}`, true},
+		{"invalid context", `{"code":0,"data":{}}`, ""},
+		{"missing rules", `{"code":0,"data":{"context_revision":1}}`, "ef-communication/SKILL.md"},
+		{"missing model rules", `{"code":0,"data":{"context_revision":1}}`, "ef-profile/references/runtime-model.md"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
@@ -125,8 +136,8 @@ func TestHeartbeatPlanFailsWithoutCurrentAccessOrRules(t *testing.T) {
 			defer server.Close()
 			runtimeTestConfig(t, server.URL, true)
 			dir := installHeartbeatTestRules(t)
-			if tc.missingRules {
-				if err := os.Remove(filepath.Join(dir, "ef-communication", "SKILL.md")); err != nil {
+			if tc.missingRules != "" {
+				if err := os.Remove(filepath.Join(dir, tc.missingRules)); err != nil {
 					t.Fatal(err)
 				}
 			}
@@ -163,6 +174,13 @@ func installHeartbeatTestRules(t *testing.T) string {
 		t.Fatal(err)
 	}
 	if err := os.WriteFile(attention, []byte("# Attention\nCentral Attention procedure.\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	modelRule := filepath.Join(dir, "ef-profile", "references", "runtime-model.md")
+	if err := os.MkdirAll(filepath.Dir(modelRule), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(modelRule, []byte("# Runtime Model Reporting\n"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 	manifest, err := skills.GenerateManifest(dir, "0.0.46", "0.0.46", names, 1)

@@ -118,3 +118,9 @@ go test -v ./tests/ -run TestCacheConcurrency     # Concurrency tests
 ./tests/cache/test_cache.sh                        # Run all cache tests
 ./tests/cache/test_cache.sh --perf                 # Include performance tests
 ```
+
+## Agent Feedback and Recommendation
+
+After onboarding, the Agent scores each eligible Feed item, submits feedback, then recommends valuable items (feedback score 1 or 2) and uploads qualified Attention. Confirmed `intent_actions` are the primary scoring basis. With null, missing, or empty intents, the Agent uses `network_goal`, user profile, current interests, and conversation context. Delivery preferences continue to constrain presentation and explicit content restrictions.
+
+The backend `intent_match` is an advisory keyword match, not a feedback score or a delivery gate. Its status and numeric score remain wire-compatible; the reason distinguishes absent intents from an evaluated non-match. Empty intents never authorize inferred intent actions. Recoverable feedback failures do not discard qualified judgments or block later safe stages. Baseline onboarding remains read-only.

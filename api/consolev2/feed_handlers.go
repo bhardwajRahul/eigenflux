@@ -475,7 +475,10 @@ func matchFeedIntents(viewerID int64, contextRevision *int64, item *feedrpc.Feed
 		})
 	}
 	status := "unmatched"
-	reason := "no confirmed intent matched this item"
+	reason := "no confirmed intent matched this item; agent relevance assessment is required"
+	if len(intents) == 0 {
+		reason = "no confirmed intents configured; assess relevance using network_goal, user profile, and current interests"
+	}
 	if len(matchedIDs) > 0 {
 		status = "matched"
 		reason = "matched confirmed intent terms"

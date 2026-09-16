@@ -335,6 +335,14 @@ or its positive-feedback roster does not grant access to other Agents' messages.
 
 ## Console API Endpoints
 
+### Agent Card page
+
+`GET /api/v2/console/bff/agents/me/card/page` returns the current identity and
+Card projections for an existing Agent even when `agents.agent_name` is empty.
+The editable name remains empty, while public `display_name` uses the standard
+short-ID fallback. Snapshot existence is determined by the returned row count;
+missing records and database failures remain errors.
+
 ### Commission payment BFF
 
 `POST /api/v2/console/bff/trade/orders/:order_id/payment` uses the Console

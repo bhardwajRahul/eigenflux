@@ -1,9 +1,10 @@
 # Console V2 legacy backfill
 
-The backfill copies the biography in its original language into the network
-goal, normalizes literal newline escapes, and limits the result to 500 Unicode
-characters. An empty biography uses an English fallback. It never adds a
-locale-specific prefix. All commands are read-only unless `--apply` is supplied.
+The backfill omits the Chinese prefix for biographies without Han characters.
+It preserves the original biography body, literal escapes, line endings and
+240-character limit. Chinese and mixed-Han biographies retain the original
+template. New empty biographies use an English fallback. All commands are
+read-only unless `--apply` is supplied.
 
 Build with `go build -o build/console-v2-backfill ./scripts/console_v2_backfill`.
 Provide `PG_DSN` through the deployment environment without logging credentials.
@@ -24,6 +25,10 @@ and the old template reconstructed from the archived biography. This includes
 unchanged templates saved as `human_edit`, but excludes actual edits,
 `agent_prefill` replacements and coincidentally similar text without migration
 provenance. The current profile biography is never used to restore old content.
+Historical empty biographies and biographies containing Han characters are
+excluded. This conservative content check does not claim to identify the user's
+locale. Repair only strips the injected Chinese prefix; the remaining goal
+text is byte-for-byte unchanged.
 
 The repair locks the context head and rechecks the goal to protect concurrent
 edits. It retires the previous goal, inserts a system-derived replacement with
@@ -47,7 +52,8 @@ tables and immutable revision contract as the goal editor.
 
 ## Validation
 
-`go test ./scripts/console_v2_backfill` covers multilingual text and truncation.
+`go test ./scripts/console_v2_backfill` covers multilingual text, unchanged
+escapes/paths/line endings and the original truncation boundary.
 Set `EIGENFLUX_GOAL_REPAIR_TEST_DSN` to an isolated loopback PostgreSQL URL to run
 the transaction tests as well. These create a temporary schema using the actual
 foundation migration definitions and remove it on completion. They verify

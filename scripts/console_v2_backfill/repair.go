@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"strings"
 	"time"
 )
 
@@ -51,7 +52,7 @@ func loadGoalRepairs(db *sql.DB, cursor, agentID int64, limit int) ([]goalRepair
 		cursor = row.agentID
 		agent := legacyAgent{bio: row.bio}
 		row.newText = legacyNetworkGoal(agent)
-		if row.oldText == originalLegacyNetworkGoal(agent) && row.newText != row.oldText {
+		if strings.TrimSpace(row.bio) != "" && row.oldText == originalLegacyNetworkGoal(agent) && row.newText != row.oldText {
 			repairs = append(repairs, row)
 		}
 	}

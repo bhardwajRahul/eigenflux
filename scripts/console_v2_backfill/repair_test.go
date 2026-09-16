@@ -13,14 +13,16 @@ import (
 
 func TestLegacyNetworkGoal(t *testing.T) {
 	cases := []struct{ name, bio, want string }{
-		{"english", `Domains: security\nPurpose: research`, "Domains: security\nPurpose: research"},
-		{"chinese", "  关注安全研究与技术交流  ", "关注安全研究与技术交流"},
+		{"english", `Domains: security\nPurpose: research`, `Domains: security\nPurpose: research`},
+		{"chinese unchanged", "  关注安全研究与技术交流  ", "延续现有 Agent 方向：关注安全研究与技术交流"},
+		{"mixed language unchanged", "Security 安全研究", "延续现有 Agent 方向：Security 安全研究"},
 		{"other language", "Recherche en sécurité", "Recherche en sécurité"},
-		{"line endings", "first\\r\\nsecond\r\nthird", "first\nsecond\nthird"},
+		{"line endings unchanged", "first\\r\\nsecond\r\nthird", "first\\r\\nsecond\r\nthird"},
+		{"windows path unchanged", `Workspace: C:\new-project`, `Workspace: C:\new-project`},
 		{"not unescape other text", `code: \t and \u4e00`, `code: \t and \u4e00`},
 		{"empty", "  \n ", "Continue existing EigenFlux network activities and collaboration."},
-		{"restore truncated biography", strings.Repeat("x", 426), strings.Repeat("x", 426)},
-		{"unicode limit", strings.Repeat("研", 501), strings.Repeat("研", 500)},
+		{"preserve truncation", strings.Repeat("x", 426), strings.Repeat("x", 240)},
+		{"unicode limit", strings.Repeat("é", 241), strings.Repeat("é", 240)},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
@@ -113,11 +115,13 @@ func TestRepairPostgresEndToEnd(t *testing.T) {
 	db := repairTestDB(t)
 	bio := `Domains: cybersecurity\nPurpose: research ` + strings.Repeat("x", 300)
 	seedRepair(t, db, 1, bio, "system_derived")
-	seedRepair(t, db, 2, "原始中文简介", "human_edit")
+	seedRepair(t, db, 2, "Original English biography", "human_edit")
 	seedRepair(t, db, 3, "Keep this edited goal", "human_edit")
 	seedRepair(t, db, 4, "Not a migration", "system_derived")
 	seedRepair(t, db, 5, "Agent has replaced this", "agent_prefill")
 	seedRepair(t, db, 6, "", "system_derived")
+	seedRepair(t, db, 7, "原始中文简介", "system_derived")
+	seedRepair(t, db, 8, "Security 安全研究", "human_edit")
 	execTestSQL(t, db, `UPDATE agent_network_goals SET goal_text='My actual edited goal' WHERE agent_id=3`)
 	execTestSQL(t, db, `UPDATE agent_onboarding_drafts SET request_id='unrelated' WHERE agent_id=4`)
 	// A read-only session proves the default repair mode never writes.
@@ -127,13 +131,13 @@ func TestRepairPostgresEndToEnd(t *testing.T) {
 	}
 	execTestSQL(t, db, `SET default_transaction_read_only = off`)
 	var n int
-	if err := db.QueryRow(`SELECT count(*) FROM agent_context_revisions`).Scan(&n); err != nil || n != 6 {
+	if err := db.QueryRow(`SELECT count(*) FROM agent_context_revisions`).Scan(&n); err != nil || n != 8 {
 		t.Fatalf("dry-run changed snapshots: n=%d err=%v", n, err)
 	}
 	if err := repairLegacyGoals(db, true, 1, 0); err != nil {
 		t.Fatal(err)
 	}
-	for _, id := range []int64{1, 2, 6} {
+	for _, id := range []int64{1, 2} {
 		var text, source string
 		var active, onboard, schema, goalVersion int
 		var equal, historical bool
@@ -152,17 +156,17 @@ func TestRepairPostgresEndToEnd(t *testing.T) {
 		if source != "system_derived" || active != 2 || onboard != 2 || schema != 3 || goalVersion != 2 || !equal || !historical {
 			t.Fatalf("lost version/history/context invariants: %d %s %d %d %d %t %t", id, source, active, onboard, schema, equal, historical)
 		}
-		if id == 1 && text != legacyNetworkGoal(legacyAgent{bio: bio}) {
-			t.Fatalf("did not restore full biography/newlines: %q", text)
+		if id == 1 && text != strings.TrimPrefix(originalLegacyNetworkGoal(legacyAgent{bio: bio}), "延续现有 Agent 方向：") {
+			t.Fatalf("changed biography body while removing prefix: %q", text)
 		}
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM agent_context_heads WHERE agent_id IN(3,4,5) AND active_revision=1`).Scan(&n); err != nil || n != 3 {
+	if err := db.QueryRow(`SELECT count(*) FROM agent_context_heads WHERE agent_id IN(3,4,5,6,7,8) AND active_revision=1`).Scan(&n); err != nil || n != 6 {
 		t.Fatalf("modified excluded agents: n=%d err=%v", n, err)
 	}
 	if err := repairLegacyGoals(db, true, 2, 0); err != nil {
 		t.Fatal(err)
 	}
-	if err := db.QueryRow(`SELECT count(*) FROM agent_context_revisions`).Scan(&n); err != nil || n != 9 {
+	if err := db.QueryRow(`SELECT count(*) FROM agent_context_revisions`).Scan(&n); err != nil || n != 10 {
 		t.Fatalf("not idempotent: n=%d err=%v", n, err)
 	}
 }

@@ -17,6 +17,7 @@ import (
 	"os"
 	"strings"
 	"time"
+	"unicode"
 
 	_ "github.com/lib/pq"
 )
@@ -269,17 +270,16 @@ type legacyBackfillRow struct {
 }
 
 func legacyNetworkGoal(agent legacyAgent) string {
-	// Preserve the biography's language instead of injecting a locale-specific
-	// prefix. Historical clients sometimes submitted literal newline escapes.
-	bio := strings.TrimSpace(strings.NewReplacer(`\r\n`, "\n", `\n`, "\n", "\r\n", "\n").Replace(agent.bio))
+	// Change only the injected prefix; preserve the original body and limit.
+	bio := strings.TrimSpace(agent.bio)
 	if bio == "" {
 		return "Continue existing EigenFlux network activities and collaboration."
 	}
-	runes := []rune(bio)
-	if len(runes) > 500 {
-		bio = string(runes[:500])
+	goal := originalLegacyNetworkGoal(agent)
+	if strings.ContainsFunc(bio, func(r rune) bool { return unicode.Is(unicode.Han, r) }) {
+		return goal
 	}
-	return bio
+	return strings.TrimPrefix(goal, "延续现有 Agent 方向：")
 }
 
 // originalLegacyNetworkGoal identifies only the historical template. Repair

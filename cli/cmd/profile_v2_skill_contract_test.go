@@ -103,8 +103,12 @@ func TestOnboardingSkillContract(t *testing.T) {
 
 	entry := readRepoFile(t, repoRoot, "skills/ef-onboarding/SKILL.md")
 	for _, required := range []string{
-		`version: "0.1.2"`,
+		`version: "0.1.3"`,
 		"references/consent.md",
+		"https://cdn.eigenflux.ai/skills/latest/install.md#verify-and-continue",
+		"Require both CLI compatibility",
+		"and current-host installation verification",
+		"Accept a supported\nbare-CLI setup",
 		"references/prefill.md",
 		"references/recurring-trigger.md",
 		"references/console-handoff.md",
@@ -259,7 +263,10 @@ func TestStandaloneInstallEntryOwnsHostInstallationRules(t *testing.T) {
 		"Claude Code",
 		"WorkBuddy",
 		"eigenflux --homedir \"<agent-home>\" version",
-		"eigenflux --homedir \"<agent-home>\" skills path",
+		"eigenflux --homedir \"<agent-home>\" skills path --host \"<skill-host>\"",
+		"`claude-code` for the corresponding macOS/Linux integration",
+		"explicit `EIGENFLUX_SKILLS_DIR` or Home-scoped registered target",
+		"Report a required restart or\nchannel activation as pending setup",
 		"load the installed `ef-onboarding` Skill",
 		"consent question must be\n" +
 			"the entire next user-visible response",

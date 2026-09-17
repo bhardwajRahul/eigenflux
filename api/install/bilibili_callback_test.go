@@ -81,6 +81,37 @@ func TestReportBilibiliConversionErrors(t *testing.T) {
 	}
 }
 
+func TestReportBilibiliConversionResponseValidation(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		body     string
+		wantCode int
+	}{
+		{"empty success", "", 0},
+		{"whitespace success", " \n", 0},
+		{"explicit success", `{"code":0}`, 0},
+		{"rejection", `{"code":1001,"message":"rejected"}`, 1001},
+		{"html", `<html>upstream error</html>`, -2},
+		{"truncated json", `{"code":`, -2},
+		{"missing code", `{"message":"error"}`, -2},
+		{"null code", `{"code":null}`, -2},
+		{"null response", `null`, -2},
+		{"string code", `{"code":"0"}`, -2},
+		{"oversized response", `{"message":"` + strings.Repeat("x", 4096) + `","code":0}`, -2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			withBilibiliServer(t, func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = w.Write([]byte(tc.body))
+			}, func() {
+				code, err := reportBilibiliConversion("track", bilibiliEventFormSubmit, 1, "")
+				if code != tc.wantCode || (err != nil) != (tc.wantCode != 0) {
+					t.Fatalf("code=%d err=%v, want code=%d", code, err, tc.wantCode)
+				}
+			})
+		})
+	}
+}
+
 func TestReportBilibiliConversionRetriesTransientFailure(t *testing.T) {
 	attempts := 0
 	withBilibiliServer(t, func(w http.ResponseWriter, _ *http.Request) {

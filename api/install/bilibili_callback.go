@@ -126,16 +126,22 @@ func reportBilibiliConversion(trackID, eventType string, timestamp int64, client
 	// versions. A present non-zero code is an explicit platform rejection.
 	if len(strings.TrimSpace(string(body))) > 0 {
 		var result struct {
-			Code    int    `json:"code"`
+			Code    *int   `json:"code"`
 			Message string `json:"message"`
 			Msg     string `json:"msg"`
 		}
-		if err := json.Unmarshal(body, &result); err == nil && result.Code != 0 {
+		if err := json.Unmarshal(body, &result); err != nil {
+			return -2, fmt.Errorf("invalid bilibili response: %w", err)
+		}
+		if result.Code == nil {
+			return -2, fmt.Errorf("bilibili response missing code")
+		}
+		if *result.Code != 0 {
 			message := result.Message
 			if message == "" {
 				message = result.Msg
 			}
-			return result.Code, fmt.Errorf("bilibili code=%d: %s", result.Code, message)
+			return *result.Code, fmt.Errorf("bilibili code=%d: %s", *result.Code, message)
 		}
 	}
 	return 0, nil

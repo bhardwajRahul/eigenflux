@@ -166,6 +166,9 @@ func syncDownloadFailure(opts SyncOptions, real string, cause error) (*SyncResul
 // interrupted transactions while holding the lock. Contention is retryable,
 // never evidence that a complete local installation exists.
 func beginSyncWrite(real, parent string) (*Lock, error) {
+	if err := checkSyncReadAccess(real, parent); err != nil {
+		return nil, err
+	}
 	if err := os.MkdirAll(parent, dirPerm); err != nil {
 		return nil, err
 	}
@@ -482,6 +485,9 @@ func resolveDir(opts SyncOptions) (real, parent string, err error) {
 func prepareDir(opts SyncOptions) (real, parent string, err error) {
 	real, parent, err = resolveDir(opts)
 	if err != nil {
+		return "", "", err
+	}
+	if err := checkSyncReadAccess(real, parent); err != nil {
 		return "", "", err
 	}
 	if err := os.MkdirAll(parent, dirPerm); err != nil {

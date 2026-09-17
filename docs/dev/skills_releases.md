@@ -97,3 +97,10 @@ returns a retryable error when a mutation or recovery is required.
 failures can keep an intact local installation with `no_network=true` and
 `verified_manifest=false`; damaged or incomplete installations cannot use this
 fallback. Heartbeat freshness requirements and Agent Home writes are unchanged.
+
+Before creating the installation lock, both remote sync and local bundle installs
+probe read access to the existing parent, installation tree, recovery journal,
+and recorded rollback tree. Actual directory and file reads enforce filesystem
+ACLs and host sandbox restrictions. Read failures leave the lock and installation
+untouched. Missing paths remain valid for first installation. This preflight does
+not replace locked state validation or subsequent IO error handling.

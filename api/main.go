@@ -417,6 +417,7 @@ func registerConsoleV2BusinessBFF(h *server.Hertz, service *consolev2.Service, c
 
 	read("trade/overview", trade.TradeOverview)
 	read("trade/commissions", trade.TradeCommissions)
+	read("trade/commissions/:commission_id/reviews", trade.TradeCommissionReviews)
 	read("trade/orders", trade.TradeOrders)
 	read("trade/orders/:order_id", trade.TradeOrder)
 	read("trade/orders/:order_id/snapshots/:snapshot_id/file", trade.TradeOrderFile)

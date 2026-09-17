@@ -458,3 +458,7 @@ Baseline Feed uses `static/feed_baseline_contract.md`; completed Feed uses
 `static/feed_contract.md`. Both are generated from the central Skills. A CLI
 without a server contract reads the corresponding current synchronized Skill
 and reports missing rules instead of using a compiled business-policy copy.
+
+## Console Commission reviews
+
+`GET /api/v2/console/bff/trade/commissions/:commission_id/reviews` requires the existing Console session and Commission access gate. The BFF forwards only `cursor` and `limit`, deriving the subject from the session. It delegates to `GET /api/v1/commissions/:commission_id/reviews` with scope `commissions:reviews:read` and operation `console.trade.commissions.reviews.list`. The ID must be a canonical positive int64 decimal. Commission retains its existing visibility checks and returns `reviews` and `next_cursor`; the BFF does not invent a total. Deploy Commission support for this delegated operation before the BFF and website changes.

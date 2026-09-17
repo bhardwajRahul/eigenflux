@@ -31,7 +31,9 @@ func InstallFromBundle(opts SyncOptions) (*SyncResult, error) {
 	}
 	defer lock.Release()
 
-	recoverInterrupted(real)
+	if err := recoverInterrupted(real); err != nil {
+		return nil, softFail(opts, err)
+	}
 	local, _ := ReadLocalManifest(real)
 	return bundleApply(opts, real, parent, local, false)
 }

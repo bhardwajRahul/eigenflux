@@ -70,3 +70,30 @@ still persisted and `verified_manifest` remains true.
 Production releases require the existing R2 and signing secrets plus Python 3,
 Go, GNU tar, and an AWS CLI supporting S3 conditional PutObject. Publishing
 through any other workflow is rejected before credentials are loaded.
+
+## Client synchronization and permissions
+
+An unchanged, intact installation is checked without creating directories,
+lock files, or timestamps in the Skills tree or its parent. The client checks
+directory identity and manifest metadata around content verification and retries
+changed snapshots at most three times. An active transaction must be recovered
+under the installation lock before its files can be accepted.
+
+Manifest requests, archive downloads, extraction, and validation run outside the
+installation lock. Each attempt uses its own system temporary directory. Under
+the lock, the client recovers any interrupted transaction, rereads the installed
+state, and repeats rollback, compatibility, and freshness checks. It then copies
+the prepared archive into the existing same-filesystem staging slot and commits
+with the journaled swap. Concurrently completed updates are skipped; newer
+installed sequences cannot be overwritten by older downloads. User edits are
+preserved and prevent `verified_manifest=true`.
+
+A higher signed sequence with unchanged content still requires a locked metadata
+write, without an archive download. Installation, repair, recovery, and metadata
+updates require write permission; an unchanged check does not. Lock contention
+returns a retryable error when a mutation or recovery is required.
+
+`--quiet` does not suppress installation or permission errors. Background network
+failures can keep an intact local installation with `no_network=true` and
+`verified_manifest=false`; damaged or incomplete installations cannot use this
+fallback. Heartbeat freshness requirements and Agent Home writes are unchanged.

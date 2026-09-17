@@ -100,6 +100,9 @@ func TestSkillsSyncCLIReadOnly(t *testing.T) {
 	if err == nil || !strings.Contains(strings.ToLower(string(output)), "permission denied") {
 		t.Fatalf("quiet CLI hid write failure: %v\n%s", err, output)
 	}
+	if !strings.Contains(string(output), "SKILLS_PERMISSION_REQUIRED") || !strings.Contains(string(output), "operation=create_lock") || !strings.Contains(string(output), "host permission flow") || !strings.Contains(string(output), "after approval") {
+		t.Fatalf("CLI did not guide the Agent to request permission: %s", output)
+	}
 	if strings.Contains(string(output), "%!w") || strings.Contains(string(output), "panic:") {
 		t.Fatalf("CLI lost original error: %s", output)
 	}
@@ -108,8 +111,8 @@ func TestSkillsSyncCLIReadOnly(t *testing.T) {
 		t.Fatalf("failed CLI update damaged installation: %q, %v", content, err)
 	}
 
-	// Two separate CLI processes overlap their downloads. The second commits
-	// while the first is blocked on the CDN; the first then skips its commit.
+	// The writer owns the lock through download and installation. A competing
+	// process gets a retryable error, then observes the completed installation.
 	concurrentTarget := filepath.Join(root, "concurrent", "skills")
 	type outcome struct {
 		output []byte
@@ -127,16 +130,55 @@ func TestSkillsSyncCLIReadOnly(t *testing.T) {
 		t.Fatal("first CLI did not start download")
 	}
 	output, err = run(concurrentTarget)
-	if err != nil || !strings.Contains(string(output), `"atomic": true`) {
-		t.Fatalf("second CLI could not commit during first download: %v\n%s", err, output)
+	if err == nil || !strings.Contains(string(output), "being updated") || strings.Contains(string(output), "SKILLS_PERMISSION_REQUIRED") {
+		t.Fatalf("competing CLI should request retry, not permission: %v\n%s", err, output)
 	}
 	unblock()
 	select {
 	case first := <-firstDone:
-		if first.err != nil || !strings.Contains(string(first.output), `"atomic": false`) || !strings.Contains(string(first.output), `"verified_manifest": true`) {
-			t.Fatalf("first CLI failed to skip duplicate commit: %v\n%s", first.err, first.output)
+		if first.err != nil || !strings.Contains(string(first.output), `"atomic": true`) || !strings.Contains(string(first.output), `"verified_manifest": true`) {
+			t.Fatalf("first CLI failed to commit: %v\n%s", first.err, first.output)
 		}
 	case <-time.After(10 * time.Second):
 		t.Fatal("first CLI did not finish")
 	}
+	output, err = run(concurrentTarget)
+	if err != nil || !strings.Contains(string(output), `"atomic": false`) || !strings.Contains(string(output), `"verified_manifest": true`) {
+		t.Fatalf("retry should observe completed installation: %v\n%s", err, output)
+	}
+
+	// Simulate the user granting filesystem access, then retry the same command.
+	for _, dir := range []string{targetParent, target} {
+		if err := os.Chmod(dir, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	output, err = run(target)
+	if err != nil || !strings.Contains(string(output), `"atomic": true`) {
+		t.Fatalf("retry after permission grant failed: %v\n%s", err, output)
+	}
+	content, err = os.ReadFile(filepath.Join(target, "ef-profile", "SKILL.md"))
+	if err != nil || string(content) != "new content" {
+		t.Fatalf("retry did not install updated content: %q, %v", content, err)
+	}
+
+	// A denied official Skill read also reaches the Agent without creating a lock.
+	skillFile := filepath.Join(target, "ef-profile", "SKILL.md")
+	if err := os.Chmod(skillFile, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(skillFile, 0600) })
+	before, err := os.Stat(targetParent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	output, err = run(target)
+	if err == nil || !strings.Contains(string(output), "SKILLS_PERMISSION_REQUIRED") || !strings.Contains(string(output), "operation=read") || !strings.Contains(string(output), skillFile) {
+		t.Fatalf("CLI did not report required read permission: %v\n%s", err, output)
+	}
+	after, err := os.Stat(targetParent)
+	if err != nil || !before.ModTime().Equal(after.ModTime()) {
+		t.Fatalf("read failure created or removed a lock: %v", err)
+	}
+
 }

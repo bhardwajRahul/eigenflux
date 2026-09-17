@@ -12,121 +12,107 @@ import (
 // directory using a crash-safe whole-directory atomic swap. See package doc for
 // the guarantees. It never deletes skills it did not install (managed_by lock)
 // and preserves unrelated/user-modified skill folders.
-func Sync(opts SyncOptions) (*SyncResult, error) {
+func Sync(opts SyncOptions) (result *SyncResult, err error) {
+	defer func() { err = permissionFailure(err, "install") }()
 	real, parent, err := resolveDir(opts)
 	if err != nil {
-		return nil, softFail(opts, err)
+		return nil, err
 	}
 
-	// Network work never owns the installation lock.
-	remote, dirURL, source, ferr := fetchManifest(opts)
-	local, intact, err := readSyncSnapshot(real)
+	// Repair interrupted local swaps before waiting on the network.
+	local, err := readSyncSnapshot(real)
 	if errors.Is(err, errRecoveryRequired) {
 		lock, lockErr := beginSyncWrite(real, parent)
 		if lockErr != nil {
-			return nil, softFail(opts, lockErr)
+			return nil, lockErr
 		}
-		local, intact, err = readSyncSnapshot(real)
+		local, err = readSyncSnapshot(real)
 		lock.Release()
 	}
 	if err != nil {
-		return nil, softFail(opts, err)
+		return nil, err
+	}
+	remote, dirURL, source, ferr := fetchManifest(opts)
+	// The installation may change while the remote check is in flight.
+	local, err = readSyncSnapshot(real)
+	if err != nil {
+		return nil, err
 	}
 	if ferr != nil {
-		if intact {
-			r := &SyncResult{SkillsDir: real, Source: "local", CLIVersion: local.CLIVersion, NoNetwork: true}
+		if local.intact {
+			r := &SyncResult{SkillsDir: real, Source: "local", CLIVersion: local.manifest.CLIVersion, NoNetwork: true, Stale: local.stale}
 			if opts.IfStale || opts.Quiet {
 				return r, nil
 			}
 			return r, ferr
 		}
-		if local == nil && opts.FromBundle && opts.BundleDir != "" {
+		if local.manifest == nil && opts.FromBundle && opts.BundleDir != "" {
 			lock, err := beginSyncWrite(real, parent)
 			if err != nil {
-				return nil, softFail(opts, err)
+				return nil, err
 			}
 			defer lock.Release()
-			// Another process may have installed while this request was offline.
-			local, intact, err = readSyncSnapshot(real)
+			local, err = readSyncSnapshot(real)
 			if err != nil {
-				return nil, softFail(opts, err)
+				return nil, err
 			}
-			if intact {
-				return &SyncResult{SkillsDir: real, Source: "local", CLIVersion: local.CLIVersion, NoNetwork: true}, nil
+			if local.intact {
+				return &SyncResult{SkillsDir: real, Source: "local", CLIVersion: local.manifest.CLIVersion, NoNetwork: true, Stale: local.stale}, nil
 			}
-			if local == nil {
-				return bundleApply(opts, real, parent, local, true)
+			if local.manifest == nil {
+				return bundleApply(opts, real, parent, nil, true)
 			}
 		}
-		return nil, softFail(opts, ferr)
+		return nil, ferr
 	}
-
-	if result, err := syncDecision(opts, real, local, remote, intact); result != nil || err != nil {
+	if result, err := syncDecision(opts, real, local, remote); result != nil || err != nil {
 		return result, err
-	}
-
-	// Extract and verify in a private scratch directory. The fixed, same-volume
-	// swap slot is populated only after acquiring the installation lock.
-	staged := ""
-	if local == nil || local.Revision != remote.Revision || !intact {
-		tarGz, err := fetchTarball(opts, dirURL, remote.Revision)
-		if err != nil {
-			return syncDownloadFailure(opts, real, err)
-		}
-		if err := verifyTarSHA(tarGz, remote.TarSHA256); err != nil {
-			return syncDownloadFailure(opts, real, err)
-		}
-		staged, err = os.MkdirTemp("", "eigenflux-skills-*")
-		if err != nil {
-			return nil, softFail(opts, err)
-		}
-		defer os.RemoveAll(staged)
-		if err := extractTarGz(tarGz, staged, manifestSkillNames(remote)); err != nil {
-			return syncDownloadFailure(opts, real, err)
-		}
-		if err := verifyManifest(staged, remote); err != nil {
-			return syncDownloadFailure(opts, real, err)
-		}
 	}
 
 	lock, err := beginSyncWrite(real, parent)
 	if err != nil {
-		return nil, softFail(opts, err)
+		return nil, err
 	}
 	defer lock.Release()
-	local, intact, err = readSyncSnapshot(real)
+	local, err = readSyncSnapshot(real)
 	if err != nil {
-		return nil, softFail(opts, err)
+		return nil, err
 	}
-	// The lock-free decision is advisory: never overwrite a newer installation
-	// or lose user edits made while this process was downloading.
-	if result, err := syncDecision(opts, real, local, remote, intact); result != nil || err != nil {
+	// A different writer may have installed a newer release during the check.
+	if result, err := syncDecision(opts, real, local, remote); result != nil || err != nil {
 		return result, err
 	}
-	if intact && local.Revision == remote.Revision {
+	if local.intact && !local.stale && local.manifest.Revision == remote.Revision {
 		remote.ManagedBy = ManagedByValue
 		if err := WriteManifestAtomic(real, remote); err != nil {
-			return nil, softFail(opts, fmt.Errorf("manifest metadata update failed: %w", err))
+			return nil, fmt.Errorf("manifest metadata update failed: %w", err)
 		}
 		return &SyncResult{SkillsDir: real, Source: "local", CLIVersion: remote.CLIVersion, VerifiedManifest: true}, nil
 	}
-	if staged == "" {
-		return nil, fmt.Errorf("skills sync: installation changed during metadata refresh; retry sync")
+
+	// Keep the existing same-filesystem staging and durable extraction path.
+	tarGz, err := fetchTarball(opts, dirURL, remote.Revision)
+	if err != nil {
+		return syncDownloadFailure(opts, real, err)
+	}
+	if err := verifyTarSHA(tarGz, remote.TarSHA256); err != nil {
+		return syncDownloadFailure(opts, real, err)
 	}
 	newDir := real + newSuffix
 	if err := os.RemoveAll(newDir); err != nil {
-		return nil, softFail(opts, err)
+		return nil, err
 	}
-	if err := copyDir(staged, newDir); err != nil {
+	if err := extractTarGz(tarGz, newDir, manifestSkillNames(remote)); err != nil {
 		os.RemoveAll(newDir)
-		return nil, softFail(opts, err)
+		return nil, err
 	}
-	return applyStaged(opts, real, parent, newDir, local, remote, source, false)
+	return applyStaged(opts, real, parent, newDir, local.manifest, remote, source, false)
 }
 
 // syncDecision returns nil when a write is required. Both the optimistic read
 // and the locked commit use the same rollback and compatibility rules.
-func syncDecision(opts SyncOptions, real string, local, remote *Manifest, intact bool) (*SyncResult, error) {
+func syncDecision(opts SyncOptions, real string, state *syncSnapshot, remote *Manifest) (*SyncResult, error) {
+	local, intact := state.manifest, state.intact
 	reason := ""
 	if local != nil && local.Sequence > 0 {
 		switch {
@@ -145,19 +131,19 @@ func syncDecision(opts SyncOptions, real string, local, remote *Manifest, intact
 		}
 		return nil, fmt.Errorf("skills sync: %s; no intact local installation", reason)
 	}
-	if intact && local.Revision == remote.Revision && remote.Sequence == local.Sequence {
+	if intact && !state.stale && local.Revision == remote.Revision && remote.Sequence == local.Sequence {
 		return &SyncResult{SkillsDir: real, Source: "local", CLIVersion: local.CLIVersion, VerifiedManifest: true}, nil
 	}
 	return nil, nil
 }
 
 func syncDownloadFailure(opts SyncOptions, real string, cause error) (*SyncResult, error) {
-	local, intact, err := readSyncSnapshot(real)
+	local, err := readSyncSnapshot(real)
 	if err != nil {
 		return nil, softFail(opts, err)
 	}
-	if intact {
-		return keepLocal(real, local, cause.Error()), nil
+	if local.intact {
+		return keepLocal(real, local.manifest, cause.Error()), nil
 	}
 	return nil, softFail(opts, cause)
 }
@@ -170,18 +156,18 @@ func beginSyncWrite(real, parent string) (*Lock, error) {
 		return nil, err
 	}
 	if err := os.MkdirAll(parent, dirPerm); err != nil {
-		return nil, err
+		return nil, permissionFailure(err, "create_lock")
 	}
 	lock, locked, err := acquireLock(parent)
 	if err != nil {
-		return nil, err
+		return nil, permissionFailure(err, "create_lock")
 	}
 	if !locked {
 		return nil, fmt.Errorf("skills sync: installation is being updated; retry sync")
 	}
 	if err := recoverInterrupted(real); err != nil {
 		lock.Release()
-		return nil, err
+		return nil, permissionFailure(err, "recover")
 	}
 	return lock, nil
 }
@@ -199,6 +185,9 @@ func manifestSkillNames(m *Manifest) []string {
 func applyStaged(opts SyncOptions, real, parent, newDir string, local, remote *Manifest, source string, stale bool) (*SyncResult, error) {
 	if err := verifyManifest(newDir, remote); err != nil {
 		os.RemoveAll(newDir)
+		if errors.Is(err, os.ErrPermission) {
+			return nil, permissionFailure(err, "read")
+		}
 		if local != nil {
 			return keepLocal(real, local, "verify failed: "+err.Error()), nil
 		}
@@ -367,20 +356,21 @@ func verifyManifest(newDir string, remote *Manifest) error {
 // target may also contain third-party Skills, which are preserved intentionally
 // but are never trusted as part of the official release.
 func verifyInstalledSkills(dir string, manifest *Manifest) error {
+	var invalid error
 	for name, sha := range manifest.names() {
-		skillDir := filepath.Join(dir, name)
-		if !dirExists(skillDir) {
-			return fmt.Errorf("missing installed skill %q", name)
-		}
-		sum, err := dirSHA256(skillDir)
-		if err != nil {
+		sum, err := dirSHA256(filepath.Join(dir, name))
+		if errors.Is(err, os.ErrPermission) {
 			return err
 		}
-		if sum != sha {
-			return fmt.Errorf("installed skill %q was modified", name)
+		// Continue after a mismatch so another official Skill's read denial
+		// cannot be hidden by a user edit or a missing file.
+		if err != nil {
+			invalid = err
+		} else if sum != sha {
+			invalid = fmt.Errorf("installed skill %q was modified", name)
 		}
 	}
-	return nil
+	return invalid
 }
 
 // reconcileZombies returns the names of skills we previously managed that are no
@@ -448,6 +438,9 @@ func preserveUnmanaged(real, newDir string, local, remote *Manifest, forceManage
 		// and report that we skipped the update for it.
 		if want, isManaged := recorded[name]; isManaged {
 			cur, err := dirSHA256(src)
+			if errors.Is(err, os.ErrPermission) {
+				return nil, permissionFailure(err, "read")
+			}
 			if err == nil && cur != want && !forceManaged {
 				if err := replaceCopy(src, dst); err != nil {
 					return nil, err
@@ -472,7 +465,7 @@ func replaceCopy(src, dst string) error {
 func resolveDir(opts SyncOptions) (real, parent string, err error) {
 	dst, err := ResolveSkillsDir(opts.Into, opts.Host)
 	if err != nil {
-		return "", "", err
+		return "", "", permissionFailure(err, "read")
 	}
 	real = dst
 	if r, e := filepath.EvalSymlinks(dst); e == nil {
@@ -506,14 +499,8 @@ func keepLocal(real string, local *Manifest, reason string) *SyncResult {
 }
 
 // softFail preserves failures for callers even when quiet output is requested.
-func softFail(o SyncOptions, e error) error {
-	if e == nil {
-		return nil
-	}
-	if o.Quiet {
-		fmt.Fprintln(os.Stderr, "skills sync:", e)
-	}
-	return e
+func softFail(_ SyncOptions, err error) error {
+	return permissionFailure(err, "install")
 }
 
 func fsyncDir(dir string) {

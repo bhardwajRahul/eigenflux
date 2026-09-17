@@ -1,71 +1,50 @@
 package skills
 
 import (
+	"errors"
 	"fmt"
-	"io"
-	"io/fs"
 	"os"
-	"path/filepath"
 	"strings"
 )
 
-// checkSyncReadAccess uses actual reads so ACLs and sandbox restrictions are
-// honored. It is a preflight only; callers must still handle errors under lock.
-// Missing installation paths are valid on first install.
-func checkSyncReadAccess(real, parent string) error {
-	for ancestor := parent; ; ancestor = filepath.Dir(ancestor) {
-		if _, err := os.ReadDir(ancestor); err == nil {
-			break
-		} else if !os.IsNotExist(err) {
-			return fmt.Errorf("skills sync: cannot read installation parent before locking: %w", err)
-		}
-		if filepath.Dir(ancestor) == ancestor {
-			break
-		}
+var errSkillsPermissionRequired = errors.New("SKILLS_PERMISSION_REQUIRED")
+
+// permissionFailure retains the original filesystem error and gives the Agent
+// an explicit next step through the existing command error channel.
+func permissionFailure(err error, operation string) error {
+	if !errors.Is(err, os.ErrPermission) || errors.Is(err, errSkillsPermissionRequired) {
+		return err
+	}
+	return fmt.Errorf("%w: operation=%s; %w. Agent: explain the denied path and operation to the user; request the required filesystem access through the host permission flow; retry the exact original command only after approval. If denied, report that Skills synchronization is incomplete", errSkillsPermissionRequired, operation, err)
+}
+
+// checkSyncReadAccess reuses official content verification, without scanning
+// unrelated Skills. Absent paths are valid for a first installation.
+func checkSyncReadAccess(real, parent string) (err error) {
+	defer func() { err = permissionFailure(err, "read") }()
+	if _, err := os.ReadDir(parent); err != nil && !os.IsNotExist(err) {
+		return err
 	}
 	paths := []string{real}
 	data, err := os.ReadFile(real + journalSuffix)
 	if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("skills sync: cannot read recovery journal before locking: %w", err)
+		return err
 	}
-	if err == nil {
-		if old := strings.TrimSpace(string(data)); old != "" {
-			paths = append(paths, old)
-		}
+	if old := strings.TrimSpace(string(data)); old != "" {
+		paths = append(paths, old)
 	}
 	for _, root := range paths {
-		err := filepath.WalkDir(root, func(path string, entry fs.DirEntry, err error) error {
-			if err != nil {
-				// A concurrent swap can temporarily remove a path. The locked
-				// reread decides whether it requires recovery or installation.
-				if os.IsNotExist(err) {
-					return nil
-				}
-				return err
-			}
-			if entry.IsDir() || entry.Type()&os.ModeSymlink != 0 {
-				return nil
-			}
-			if !entry.Type().IsRegular() {
-				return fmt.Errorf("unsupported installation file: %s", path)
-			}
-			file, err := os.Open(path)
-			if os.IsNotExist(err) {
-				return nil
-			}
-			if err != nil {
-				return err
-			}
-			var probe [1]byte
-			_, readErr := file.Read(probe[:])
-			closeErr := file.Close()
-			if readErr != nil && readErr != io.EOF {
-				return readErr
-			}
-			return closeErr
-		})
+		if _, err := os.ReadDir(root); err != nil && !os.IsNotExist(err) {
+			return err
+		}
+		manifest, err := ReadLocalManifest(root)
 		if err != nil {
-			return fmt.Errorf("skills sync: cannot read installation before locking: %w", err)
+			return err
+		}
+		if manifest != nil {
+			if err := verifyInstalledSkills(root, manifest); errors.Is(err, os.ErrPermission) {
+				return err
+			}
 		}
 	}
 	return nil

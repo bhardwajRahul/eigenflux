@@ -66,8 +66,8 @@ func TestSyncReadAccessFailureDoesNotCreateLock(t *testing.T) {
 				lock.Release()
 				t.Fatal("read access failure acquired lock")
 			}
-			if !errors.Is(err, os.ErrPermission) {
-				t.Fatalf("expected read permission error, got %v", err)
+			if !errors.Is(err, os.ErrPermission) || !errors.Is(err, errSkillsPermissionRequired) {
+				t.Fatalf("expected actionable read permission error, got %v", err)
 			}
 			after, err := os.Stat(parent)
 			if err != nil || !before.ModTime().Equal(after.ModTime()) {
@@ -94,4 +94,36 @@ func TestSyncReadAccessAllowsMissingFirstInstall(t *testing.T) {
 		t.Fatalf("first-install lock: %v", err)
 	}
 	lock.Release()
+}
+
+func TestSyncReadDenialIsNotHiddenByLocalEdits(t *testing.T) {
+	src := stageSkills(t, map[string]map[string]string{
+		"ef-broadcast": {"SKILL.md": "broadcast"},
+		"ef-profile":   {"SKILL.md": "profile"},
+	})
+	server, _ := serveBundleAtSequence(t, "1.0.0", src, []string{"ef-broadcast", "ef-profile"}, 100)
+	opts := syncOpts(filepath.Join(t.TempDir(), "skills"), "1.0.0", server.URL, nil)
+	if _, err := Sync(opts); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(filepath.Join(opts.Into, "ef-broadcast", "SKILL.md"), []byte("user edit"), 0600); err != nil {
+		t.Fatal(err)
+	}
+	blocked := filepath.Join(opts.Into, "ef-profile", "SKILL.md")
+	if err := os.Chmod(blocked, 0000); err != nil {
+		t.Fatal(err)
+	}
+	t.Cleanup(func() { _ = os.Chmod(blocked, 0600) })
+	if _, err := os.ReadFile(blocked); err == nil {
+		t.Skip("filesystem does not enforce read permissions")
+	}
+	before, _ := os.Stat(filepath.Dir(opts.Into))
+	res, err := Sync(opts)
+	if res != nil || !errors.Is(err, errSkillsPermissionRequired) || !errors.Is(err, os.ErrPermission) {
+		t.Fatalf("local edit masked read denial: %+v, %v", res, err)
+	}
+	after, _ := os.Stat(filepath.Dir(opts.Into))
+	if !before.ModTime().Equal(after.ModTime()) {
+		t.Fatal("read denial created or removed a lock")
+	}
 }

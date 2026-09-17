@@ -73,34 +73,33 @@ through any other workflow is rejected before credentials are loaded.
 
 ## Client synchronization and permissions
 
-An unchanged, intact installation is checked without creating directories,
-lock files, or timestamps in the Skills tree or its parent. The client checks
-directory identity and manifest metadata around content verification and retries
-changed snapshots at most three times. An active transaction must be recovered
-under the installation lock before its files can be accepted.
+Every heartbeat checks the signed remote manifest. An intact installation with
+unchanged content and sequence returns without creating directories, locks, or
+timestamps in the Skills tree. Directory and manifest checks around content
+verification detect concurrent swaps. Interrupted installations are recovered
+under a short lock before the remote request starts.
 
-Manifest requests, archive downloads, extraction, and validation run outside the
-installation lock. Each attempt uses its own system temporary directory. Under
-the lock, the client recovers any interrupted transaction, rereads the installed
-state, and repeats rollback, compatibility, and freshness checks. It then copies
-the prepared archive into the existing same-filesystem staging slot and commits
-with the journaled swap. Concurrently completed updates are skipped; newer
-installed sequences cannot be overwritten by older downloads. User edits are
-preserved and prevent `verified_manifest=true`.
+Only installation, repair, or signed metadata changes acquire the update lock.
+After rereading local state and repeating rollback and freshness checks, the
+client downloads and extracts directly into the existing same-filesystem staging
+slot, then uses the existing journaled swap. Downloads and installation remain
+inside this lock. Competing writers receive a retryable error. Identical or newer
+releases found during the locked recheck are not overwritten.
 
-A higher signed sequence with unchanged content still requires a locked metadata
-write, without an archive download. Installation, repair, recovery, and metadata
-updates require write permission; an unchanged check does not. Lock contention
-returns a retryable error when a mutation or recovery is required.
+Read permission checks reuse manifest and official Skills verification and its
+existing ignored-file rules. They inspect necessary directory and recovery
+metadata without recursively scanning unrelated Skills. Missing paths are valid
+for first installation. File completeness and provisional status are separate:
+an intact provisional bundle remains usable offline and is refreshed online.
 
-`--quiet` does not suppress installation or permission errors. Background network
-failures can keep an intact local installation with `no_network=true` and
-`verified_manifest=false`; damaged or incomplete installations cannot use this
-fallback. Heartbeat freshness requirements and Agent Home writes are unchanged.
+Permission failures return nonzero even with `--quiet`. The existing command
+error output includes `SKILLS_PERMISSION_REQUIRED`, the operation and original
+filesystem error (including its path), and instructions for the Agent to explain
+the problem, request access through the host permission flow, and retry the exact
+original command after approval. A denial must be reported as incomplete sync.
+The CLI neither grants permissions nor assumes an approval remains valid.
 
-Before creating the installation lock, both remote sync and local bundle installs
-probe read access to the existing parent, installation tree, recovery journal,
-and recorded rollback tree. Actual directory and file reads enforce filesystem
-ACLs and host sandbox restrictions. Read failures leave the lock and installation
-untouched. Missing paths remain valid for first installation. This preflight does
-not replace locked state validation or subsequent IO error handling.
+Tests cover read-only no-change checks, read and write permission failures,
+a retry after permissions are granted, concurrent CLI processes, signed sequence
+advancement, offline provisional reuse, ignored files, and recovery before remote
+requests. Agent Home writes and heartbeat freshness requirements are unchanged.

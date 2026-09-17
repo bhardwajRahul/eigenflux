@@ -112,7 +112,7 @@ func TestSyncReadOnlyUpdateReportsPermissionFailure(t *testing.T) {
 			}
 			before, _ := os.ReadFile(filepath.Join(opts.Into, ManifestFileName))
 			res, err := Sync(opts)
-			if !errors.Is(err, os.ErrPermission) || res != nil {
+			if !errors.Is(err, os.ErrPermission) || !errors.Is(err, errSkillsPermissionRequired) || res != nil {
 				t.Fatalf("update should report permission failure: %+v, %v", res, err)
 			}
 			after, _ := os.ReadFile(filepath.Join(opts.Into, ManifestFileName))
@@ -157,7 +157,7 @@ func TestSyncSameContentAdvancesSequenceWithoutDownload(t *testing.T) {
 	}
 }
 
-func TestSyncRechecksInstallationAfterConcurrentDownload(t *testing.T) {
+func TestSyncRechecksInstallationAfterConcurrentManifestCheck(t *testing.T) {
 	for _, newer := range []bool{false, true} {
 		name := "same-release"
 		if newer {
@@ -177,12 +177,12 @@ func TestSyncRechecksInstallationAfterConcurrentDownload(t *testing.T) {
 			}
 			var committed *SyncResult
 			opts.HTTPClient = &http.Client{Transport: syncTestTransport(func(r *http.Request) (*http.Response, error) {
-				if strings.HasSuffix(r.URL.Path, TarName) {
-					// A second writer can finish while the first is downloading.
+				if strings.HasSuffix(r.URL.Path, RemoteManifest) {
+					// A second writer can finish while the first checks the manifest.
 					var err error
 					committed, err = Sync(other)
 					if err != nil || committed == nil || !committed.Atomic {
-						t.Fatalf("download held installation lock: %+v, %v", committed, err)
+						t.Fatalf("manifest check held installation lock: %+v, %v", committed, err)
 					}
 				}
 				return http.DefaultTransport.RoundTrip(r)
@@ -333,9 +333,9 @@ func TestSyncRepairsMissingSkillAndProvisionalInstall(t *testing.T) {
 			if err != nil || res == nil || !res.Atomic || !res.VerifiedManifest {
 				t.Fatalf("repair failed: %+v, %v", res, err)
 			}
-			manifest, intact, err := readSyncSnapshot(opts.Into)
-			if err != nil || !intact || manifest == nil {
-				t.Fatalf("repair left invalid installation: %+v, %v", manifest, err)
+			snapshot, err := readSyncSnapshot(opts.Into)
+			if err != nil || !snapshot.intact || snapshot.manifest == nil {
+				t.Fatalf("repair left invalid installation: %+v, %v", snapshot, err)
 			}
 		})
 	}
@@ -355,5 +355,87 @@ func TestSyncBusyFreshInstallReturnsError(t *testing.T) {
 	res, err := Sync(opts)
 	if err == nil || res != nil || dirExists(opts.Into) {
 		t.Fatalf("busy first install reported nonexistent local copy: %+v, %v", res, err)
+	}
+}
+
+func TestSyncProvisionalInstallationRemainsUsableOffline(t *testing.T) {
+	src := stageSkills(t, map[string]map[string]string{"ef-broadcast": {"SKILL.md": "offline bundle"}})
+	opts := SyncOptions{Into: filepath.Join(t.TempDir(), "skills"), CLIVersion: "1.0.0", CDNBase: "http://127.0.0.1:1", FromBundle: true, BundleDir: src, Quiet: true, IfStale: true}
+	first, err := Sync(opts)
+	if err != nil || first == nil || !first.Stale {
+		t.Fatalf("offline bundle install failed: %+v %v", first, err)
+	}
+	before, _ := os.ReadFile(filepath.Join(opts.Into, ManifestFileName))
+	makeSyncDirReadOnly(t, opts.Into)
+	makeSyncDirReadOnly(t, filepath.Dir(opts.Into))
+	second, err := Sync(opts)
+	if err != nil || second == nil || !second.NoNetwork || !second.Stale || second.VerifiedManifest || second.Atomic {
+		t.Fatalf("intact provisional offline reuse failed: %+v %v", second, err)
+	}
+	after, _ := os.ReadFile(filepath.Join(opts.Into, ManifestFileName))
+	if !bytes.Equal(before, after) {
+		t.Fatal("offline reuse changed manifest")
+	}
+	for _, path := range []string{opts.Into, filepath.Dir(opts.Into)} {
+		if err := os.Chmod(path, 0700); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server, _ := serveBundleAtSequence(t, "1.0.0", src, []string{"ef-broadcast"}, 100)
+	opts.CDNBase = server.URL
+	res, err := Sync(opts)
+	if err != nil || res == nil || !res.Atomic || !res.VerifiedManifest || res.Stale || staleMarkerPresent(opts.Into) {
+		t.Fatalf("online sync did not replace provisional bundle: %+v %v", res, err)
+	}
+}
+
+func TestSyncIgnoresUnneededReadPermissions(t *testing.T) {
+	for _, name := range []string{"ignored-file", "unrelated-skill"} {
+		t.Run(name, func(t *testing.T) {
+			opts, _, src := installedSyncFixture(t)
+			blocked := filepath.Join(opts.Into, "ef-broadcast", ".DS_Store")
+			if name == "unrelated-skill" {
+				blocked = filepath.Join(opts.Into, "user-skill", "SKILL.md")
+				if err := os.MkdirAll(filepath.Dir(blocked), 0700); err != nil {
+					t.Fatal(err)
+				}
+			}
+			if err := os.WriteFile(blocked, []byte("not needed for metadata refresh"), 0000); err != nil {
+				t.Fatal(err)
+			}
+			t.Cleanup(func() { _ = os.Chmod(blocked, 0600) })
+			if _, err := os.ReadFile(blocked); err == nil {
+				t.Skip("filesystem does not enforce file read permissions")
+			}
+			server, _ := serveBundleAtSequence(t, "1.0.0", src, []string{"ef-broadcast"}, 101)
+			opts.CDNBase = server.URL
+			res, err := Sync(opts)
+			if err != nil || res == nil || !res.VerifiedManifest || res.Atomic {
+				t.Fatalf("irrelevant read permission blocked metadata refresh: %+v %v", res, err)
+			}
+		})
+	}
+}
+
+func TestSyncRecoversBeforeRequestingManifest(t *testing.T) {
+	opts, _, _ := installedSyncFixture(t)
+	old := opts.Into + oldSuffix
+	if err := os.Rename(opts.Into, old); err != nil {
+		t.Fatal(err)
+	}
+	if err := writeJournal(opts.Into+journalSuffix, old); err != nil {
+		t.Fatal(err)
+	}
+	opts.HTTPClient = &http.Client{Transport: syncTestTransport(func(r *http.Request) (*http.Response, error) {
+		if !dirExists(opts.Into) || fileExists(opts.Into+journalSuffix) {
+			t.Error("network request started before restoring interrupted installation")
+		}
+		if fileExists(filepath.Join(filepath.Dir(opts.Into), lockFileName)) {
+			t.Error("recovery lock held during manifest request")
+		}
+		return http.DefaultTransport.RoundTrip(r)
+	})}
+	if _, err := Sync(opts); err != nil {
+		t.Fatal(err)
 	}
 }

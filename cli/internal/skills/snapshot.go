@@ -13,23 +13,29 @@ var errRecoveryRequired = errors.New("skills sync: interrupted installation requ
 // readSyncSnapshot validates files between two reads of directory identity and
 // manifest contents. A swap or metadata refresh invalidates the entire attempt.
 // It never creates a lock, directory, marker, or timestamp.
-func readSyncSnapshot(real string) (*Manifest, bool, error) {
+func readSyncSnapshot(real string) (snapshot *syncSnapshot, err error) {
+	defer func() { err = permissionFailure(err, "read") }()
 	for attempt := 0; attempt < 3; attempt++ {
 		before, err := inspectSyncSnapshot(real)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
-		intact := before.manifest != nil && !before.stale && len(before.manifest.Skills) > 0 &&
-			verifyInstalledSkills(real, before.manifest) == nil
+		if before.manifest != nil && len(before.manifest.Skills) > 0 {
+			err := verifyInstalledSkills(real, before.manifest)
+			if errors.Is(err, os.ErrPermission) {
+				return nil, err
+			}
+			before.intact = err == nil
+		}
 		after, err := inspectSyncSnapshot(real)
 		if err != nil {
-			return nil, false, err
+			return nil, err
 		}
 		if before.matches(after) {
-			return before.manifest, intact, nil
+			return before, nil
 		}
 	}
-	return nil, false, fmt.Errorf("skills sync: installation changed while being verified; retry sync")
+	return nil, fmt.Errorf("skills sync: installation changed while being verified; retry sync")
 }
 
 type syncSnapshot struct {
@@ -37,6 +43,7 @@ type syncSnapshot struct {
 	metadata os.FileInfo
 	manifest *Manifest
 	stale    bool
+	intact   bool
 }
 
 func inspectSyncSnapshot(real string) (*syncSnapshot, error) {
@@ -45,6 +52,9 @@ func inspectSyncSnapshot(real string) (*syncSnapshot, error) {
 			return nil, err
 		}
 		return nil, errRecoveryRequired
+	}
+	if _, err := os.ReadDir(real); err != nil && !os.IsNotExist(err) {
+		return nil, err
 	}
 	dir, err := os.Stat(real)
 	if err != nil && !os.IsNotExist(err) {

@@ -10,7 +10,8 @@ import (
 // skills/ tree) instead of R2. Used by install-local.sh for development. It runs
 // the same verify → preserve → atomic-swap path as Sync, but builds the manifest
 // locally and never checks a remote checksum or marks the copy stale.
-func InstallFromBundle(opts SyncOptions) (*SyncResult, error) {
+func InstallFromBundle(opts SyncOptions) (result *SyncResult, err error) {
+	defer func() { err = permissionFailure(err, "install") }()
 	if opts.BundleDir == "" {
 		return nil, fmt.Errorf("skills install: --from-bundle <dir> required")
 	}
@@ -24,7 +25,7 @@ func InstallFromBundle(opts SyncOptions) (*SyncResult, error) {
 	}
 	lock, locked, err := acquireLock(parent)
 	if err != nil {
-		return nil, softFail(opts, err)
+		return nil, permissionFailure(err, "create_lock")
 	}
 	if !locked {
 		return &SyncResult{SkillsDir: real, Source: "local"}, nil
@@ -34,7 +35,10 @@ func InstallFromBundle(opts SyncOptions) (*SyncResult, error) {
 	if err := recoverInterrupted(real); err != nil {
 		return nil, softFail(opts, err)
 	}
-	local, _ := ReadLocalManifest(real)
+	local, err := ReadLocalManifest(real)
+	if err != nil {
+		return nil, permissionFailure(err, "read")
+	}
 	return bundleApply(opts, real, parent, local, false)
 }
 

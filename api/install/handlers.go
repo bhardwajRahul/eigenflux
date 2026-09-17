@@ -65,6 +65,7 @@ type mintBody struct {
 	// dedicated xingtu_click_id field so it is never confused with Xiaohongshu's
 	// click_id even though both platforms use similar names in their URLs.
 	ClickID                 string `json:"click_id"`             // Xiaohongshu 聚光
+	BilibiliTrackID         string `json:"bilibili_track_id"`    // Bilibili campaign track_id
 	Twclid                  string `json:"twclid"`               // X (Twitter) Ads
 	Gclid                   string `json:"gclid"`                // Google Ads
 	XingtuClickID           string `json:"xingtu_click_id"`      // Xingtu landing URL clickid
@@ -110,6 +111,7 @@ func mintRef(_ context.Context, c *app.RequestContext) {
 			return
 		}
 	}
+	bilibiliTrackID := trunc(strings.TrimSpace(body.BilibiliTrackID), 512)
 	xingtuClickID := normalizeXingtuClickID(body.XingtuClickID)
 	oceanengineClickID := normalizeOceanengineClickID(body.OceanengineClickID)
 	t := &Token{
@@ -119,9 +121,10 @@ func mintRef(_ context.Context, c *app.RequestContext) {
 		UTMCampaign:             trunc(body.UTMCampaign, 255),
 		UTMContent:              trunc(body.UTMContent, 255),
 		UTMTerm:                 trunc(body.UTMTerm, 255),
-		Channel:                 deriveChannel(body.EntryChannel, body.UTMSource, body.ClickID, body.Twclid, body.Gclid, xingtuClickID, oceanengineClickID),
+		Channel:                 deriveChannel(body.EntryChannel, body.UTMSource, body.ClickID, bilibiliTrackID, body.Twclid, body.Gclid, xingtuClickID, oceanengineClickID),
 		Referrer:                trunc(body.Referrer, 2048),
 		ClickID:                 trunc(body.ClickID, 128),
+		BilibiliTrackID:         bilibiliTrackID,
 		Twclid:                  trunc(body.Twclid, 128),
 		Gclid:                   trunc(body.Gclid, 512),
 		XingtuClickID:           xingtuClickID,
@@ -147,7 +150,7 @@ func mintRef(_ context.Context, c *app.RequestContext) {
 		return
 	}
 	event("install_ref_new", t.Token, "channel", t.Channel,
-		"paid", t.ClickID != "" || t.Twclid != "" || t.Gclid != "" || t.XingtuClickID != "" || t.OceanengineClickID != "", "invite_code", t.InviteCode)
+		"paid", t.ClickID != "" || t.BilibiliTrackID != "" || t.Twclid != "" || t.Gclid != "" || t.XingtuClickID != "" || t.OceanengineClickID != "", "invite_code", t.InviteCode)
 	// The token is now durably created; report this server-confirmed funnel
 	// stage to X when it came from an X ad click.
 	fireXAdsTokenCreatedCallback(t.Token)

@@ -350,6 +350,20 @@ The editable name remains empty, while public `display_name` uses the standard
 short-ID fallback. Snapshot existence is determined by the returned row count;
 missing records and database failures remain errors.
 
+### Commission submitted-file BFF
+
+`GET /api/v2/console/bff/trade/orders/:order_id/snapshots/:snapshot_id/file?path=...`
+uses the existing Console session. It delegates to Commission's exact snapshot
+download route with scope `orders:files:read` and operation
+`console.trade.orders.files.read`; Commission retains participant and snapshot
+authorization. It never reads the mutable current workspace instead.
+
+The default response downloads the original bytes as an attachment. `preview=1`
+returns plain text for `.md` and `.txt` files up to 1 MiB. Responses are private,
+no-store and nosniff. The BFF accepts only unexpired HTTPS Aliyun OSS grants,
+does not follow redirects, and does not forward Console credentials to storage.
+No database migration or RPC rollout is required.
+
 ### Commission payment BFF
 
 `POST /api/v2/console/bff/trade/orders/:order_id/payment` uses the Console

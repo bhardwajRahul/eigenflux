@@ -81,7 +81,7 @@ var channelMap = map[string]string{
 	"rednote":     "xiaohongshu",
 	"小红书":         "xiaohongshu",
 	"bilibili":    "bilibili",
-	"b站":           "bilibili",
+	"b站":          "bilibili",
 }
 
 // normalizeChannel maps a raw utm_source to a channel bucket. Unknown non-empty
@@ -108,11 +108,13 @@ func deriveChannel(entryChannel, utmSource, clickID, bilibiliTrackID, twclid, gc
 	if c := normalizeChannel(entryChannel); c != "unknown" {
 		return c
 	}
+	// A Bilibili track_id is issued for the ad click and is more authoritative
+	// than a stale UTM cookie left by an earlier visit.
+	if bilibiliTrackID != "" {
+		return "bilibili"
+	}
 	c := normalizeChannel(utmSource)
 	if c == "unknown" {
-		if bilibiliTrackID != "" {
-			return "bilibili"
-		}
 		if oceanengineClickID != "" {
 			return "oceanengine"
 		}

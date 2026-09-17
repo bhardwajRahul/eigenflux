@@ -40,6 +40,7 @@ func Register(h *server.Hertz, baseURL string) {
 	initXAdsConfig()
 	initGoogleAdsConfig()
 	initOceanengineConfig()
+	initBilibiliConfig()
 	g := h.Group("/api/v1/install")
 	g.POST("/token", mintRef)
 	g.POST("/report", reportInstall)
@@ -111,7 +112,7 @@ func mintRef(_ context.Context, c *app.RequestContext) {
 			return
 		}
 	}
-	bilibiliTrackID := trunc(strings.TrimSpace(body.BilibiliTrackID), 512)
+	bilibiliTrackID := normalizeBilibiliTrackID(body.BilibiliTrackID)
 	xingtuClickID := normalizeXingtuClickID(body.XingtuClickID)
 	oceanengineClickID := normalizeOceanengineClickID(body.OceanengineClickID)
 	t := &Token{
@@ -204,6 +205,10 @@ func reportInstall(_ context.Context, c *app.RequestContext) {
 	fireXHSCallback(t.Token, EventInstall)
 	fireXingtuCallback(t.Token, "1") // registration: server-confirmed first report
 	fireOceanengineCallbacks(t.Token, oceanengineEventCustomerEffective)
+	// Retry a failed copy-stage callback when a later install report arrives.
+	// The claim requires copied_at > 0 and is a no-op after a successful send.
+	fireBilibiliCallback(t.Token, bilibiliEventFormSubmit)
+	fireBilibiliCallback(t.Token, bilibiliEventClueValid)
 	fireXAdsInstallCallback(t.Token)
 	fireGoogleAdsInstallCallback(t.Token)
 	// Registration attribution: the CLI's login-time report carries agent_id,
@@ -260,6 +265,7 @@ func reportCopy(_ context.Context, c *app.RequestContext) {
 		fireXHSCallback(t.Token, EventCopy) // shallow conversion (101)
 		fireXingtuCallback(t.Token, "0")    // activation: confirmed command copy
 		fireOceanengineCallbacks(t.Token, oceanengineEventForm)
+		fireBilibiliCallback(t.Token, bilibiliEventFormSubmit)
 		// Copy was confirmed by the server and is idempotent per ref.
 		fireXAdsCopyCommandCallback(t.Token)
 	}

@@ -19,7 +19,8 @@ func TestDeriveChannel(t *testing.T) {
 		{"click id infers xhs", "", "", "cid123", "", "", "", "", "", "xiaohongshu"},
 		{"twclid infers twitter", "", "", "", "", "tw123", "", "", "", "twitter"},
 		{"gclid infers google", "", "", "", "", "", "gcl123", "", "", "google"},
-		{"explicit source wins", "", "weibo", "cid", "track123", "", "gcl123", "xt123", "oe123", "weibo"},
+		{"Bilibili track id wins stale source", "", "weibo", "cid", "track123", "", "gcl123", "xt123", "oe123", "bilibili"},
+		{"explicit source still wins other platform ids", "", "weibo", "cid", "", "", "gcl123", "xt123", "oe123", "weibo"},
 		{"no signal is unknown", "", "", "", "", "", "", "", "", "unknown"},
 	}
 	for _, c := range cases {

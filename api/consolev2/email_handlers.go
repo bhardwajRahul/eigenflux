@@ -490,6 +490,7 @@ func (s *Service) verifyEmailBinding(ctx context.Context, c *app.RequestContext)
 	now := time.Now().UnixMilli()
 	validOTP := false
 	var recoveryDetails map[string]interface{}
+	rebindRequired := false
 	err = s.db.Transaction(func(tx *gorm.DB) error {
 		_, valid, checkErr := s.lockAndCheckEmailChallenge(tx, req, normalizedEmail, "bind", &agentIDValue, &sessionID, now)
 		if checkErr != nil || !valid {
@@ -547,6 +548,7 @@ func (s *Service) verifyEmailBinding(ctx context.Context, c *app.RequestContext)
 			return err
 		}
 		if current.BindingID != 0 && current.NormalizedEmail != normalizedEmail {
+			rebindRequired = true
 			logger.Ctx(ctx).Warn("console_email_binding_conflict", "reason", "agent_already_bound_to_different_email", "agent_id", agentIDValue, "challenge_id", req.ChallengeID)
 			return errConflict
 		}
@@ -577,6 +579,12 @@ func (s *Service) verifyEmailBinding(ctx context.Context, c *app.RequestContext)
 	}
 	if recoveryDetails != nil {
 		fail(c, http.StatusConflict, "EMAIL_UNAVAILABLE", "this email belongs to a recoverable historical Agent", recoveryDetails)
+		return
+	}
+	if rebindRequired && errors.Is(err, errConflict) {
+		fail(c, http.StatusConflict, "EMAIL_UNAVAILABLE", "this Agent already has a bound email; use the Agent email change flow instead of first-time binding", map[string]interface{}{
+			"reason": "agent_email_rebind_required",
+		})
 		return
 	}
 	if errors.Is(err, errConflict) || isUniqueViolation(err) {

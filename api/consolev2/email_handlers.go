@@ -855,7 +855,7 @@ func historicalList(field string, sources ...map[string]interface{}) ([]string, 
 	return nil, false
 }
 
-func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
+func (s *Service) verifyEmailLogin(ctx context.Context, c *app.RequestContext) {
 	var req verifyEmailRequest
 	if err := decodeBody(c, &req); err != nil || req.ChallengeID == "" || req.OTP == "" {
 		fail(c, http.StatusBadRequest, "INVALID_REQUEST", "challenge_id, email, otp, and purpose are required", nil)
@@ -883,6 +883,7 @@ func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
 	csrfSecret, _ := randomToken("efcsrf_", 24)
 	now := time.Now().UnixMilli()
 	validOTP := false
+	failureReason := ""
 	var recoveredAgentID int64
 	selectedSlot := 0
 	replacedSessionID := ""
@@ -895,10 +896,16 @@ func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
 			return err
 		}
 		if challenge.SubjectAgentID == nil {
+			failureReason = "challenge_missing_or_unbound"
 			return errUnauthorized
 		}
 		checked, valid, checkErr := s.lockAndCheckEmailChallenge(tx, req, normalizedEmail, req.Purpose, challenge.SubjectAgentID, nil, now)
 		if checkErr != nil || !valid {
+			if checkErr != nil {
+				failureReason = "challenge_invalid_or_mismatched"
+			} else {
+				failureReason = "otp_mismatch"
+			}
 			validOTP = false
 			return checkErr
 		}
@@ -919,6 +926,7 @@ func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
 		}
 		if binding.BindingID == 0 || binding.AgentID != recoveredAgentID ||
 			(binding.VerificationState != "verified" && binding.VerificationState != "legacy_unverified") {
+			failureReason = "email_binding_missing_or_mismatched"
 			return errUnauthorized
 		}
 		if binding.VerificationState == "legacy_unverified" {
@@ -971,6 +979,7 @@ func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
 		consume := tx.Exec(`UPDATE v2_email_challenges SET status = 'consumed', consumed_at = ?
 			WHERE challenge_id = ? AND status = 'pending'`, now, req.ChallengeID)
 		if consume.Error != nil || consume.RowsAffected != 1 {
+			failureReason = "challenge_already_consumed"
 			return errUnauthorized
 		}
 		if replacedSessionID != "" {
@@ -989,6 +998,17 @@ func (s *Service) verifyEmailLogin(_ context.Context, c *app.RequestContext) {
 			now+int64(consoleIdleTTL/time.Millisecond), now+int64(consoleAbsoluteTTL/time.Millisecond), now, now).Error
 	})
 	if errors.Is(err, errUnauthorized) || (!validOTP && err == nil) {
+		if failureReason == "" {
+			failureReason = "unauthorized"
+		}
+		logger.Ctx(ctx).Warn("console_email_login_rejected",
+			"reason", failureReason,
+			"challenge_id", req.ChallengeID,
+			"email_hash", keyedHash(s.otpPepper, normalizedEmail),
+			"purpose", req.Purpose,
+			"add_account", req.AddAccount,
+			"error", err,
+		)
 		fail(c, http.StatusUnauthorized, "OTP_INVALID", "verification code is invalid or expired", nil)
 		return
 	}

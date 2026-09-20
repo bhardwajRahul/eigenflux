@@ -35,12 +35,17 @@ func TestRenderHeartbeatPlanForAgentIsThinAndCurrent(t *testing.T) {
 		"CLI prefix for every EigenFlux command in this cycle: eigenflux --homedir /tmp/home",
 		"Never run a bare eigenflux command",
 		"Apply runtime-model.md before subsequent CLI calls",
-		"pass it through EIGENFLUX_MODEL for each invocation",
+		"pass it through --runtime-model for each invocation",
 		"If unavailable, keep it unset and continue permitted Feed work",
 		"Apply the current Skills to each stage",
 		"A Feed payload supplied by the host is this cycle's completed pull",
-		"Follow the current Skills for onboarding restrictions, recovery, user-visible output, and silent completion",
-		"scheduler stores only the launcher",
+		"Follow the current Skills for onboarding restrictions and recovery",
+		"Host harness output and notification requirements take precedence",
+		"scheduler stores this fixed execution prompt",
+		"Store it verbatim, without additions",
+		"Even with no updates, return the complete required response (XML when prescribed)",
+		"never an empty message or silence token",
+		"Routine cycle completion alone does not warrant notification",
 	} {
 		if !strings.Contains(text, required) {
 			t.Fatalf("heartbeat plan missing %q:\n%s", required, text)

@@ -27,14 +27,6 @@ Run `python3 -m unittest discover -s tests/cli_release -p 'test_codex_install.py
 for isolated full-installer selection and receipt tests. The suite preserves a
 non-default `CODEX_HOME`, explicit Agent Home, unrelated config, and opt-outs.
 
-For a real Codex binary, run
-`python3 scripts/tests/check-codex-marketplace.py /path/to/codex supported`.
-Use `unsupported` for Codex 0.139.0 and `supported` for the minimum 0.142.0 and
-current desktop binary. The probe registers a local root-directory marketplace
-only in a disposable Home, lists its entries, and deletes the fixture. It does
-not install a plugin, start an MCP server, or alter the user's Codex settings.
-This isolates root-plugin parser compatibility from network and model behavior.
-
 ## Commission Deployed Boundary
 
 The public routing regression test runs a local Caddy process for both

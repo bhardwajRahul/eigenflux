@@ -7,7 +7,7 @@ the CLI and server retain identity, authorization, and network-state ownership.
 | Invariant | Source / final owner | Boundary | Verification | Intentional change |
 | --- | --- | --- | --- | --- |
 | Install only the invoking host; preserve other hosts, existing configuration, and explicit opt-outs | `skills/install.md`, `static/install.sh` | Installer to host plugin | Isolated installer tests with a non-default Home, installed/missing/failed plugin, and opt-out | Explain official plugin scope; no additional conversational install consent |
-| Plugin installation uses a compatible Codex executable consistently | `static/install.sh`, `skills/install.md` | PATH / app bundle discovery to install receipt and verification | Isolated installer tests: old PATH plus compatible app, compatible PATH only, unsupported / unknown versions; real CLI root-marketplace probe | Require Codex >= 0.142.0; fall back to existing app binaries without upgrading Codex or changing PATH permanently; receipt carries selected path/version |
+| Plugin installation uses a compatible Codex executable consistently | `static/install.sh`, `skills/install.md` | PATH / app bundle discovery to install receipt and verification | Isolated installer tests: old PATH plus compatible app, compatible PATH only, unsupported / unknown versions | Require Codex >= 0.142.0; fall back to existing app binaries without upgrading Codex or changing PATH permanently; receipt carries selected path/version |
 | Preserve exact Home, selected server, identity, referral, and existing accounts | Installation entry, CLI auth/config, Console handoff | Install, restart, scheduler, provision | Existing Home/referral integration tests and CLI suite | None |
 | Choice presentation preserves explicit consent and full disclosure | Main onboarding Skill template contract / same owner | Complete chat template to explicit user reply | Template and authorization contracts; manual affirmative, refusal, ambiguous-answer, no-answer, and resume checks | Present each choice directly in chat; preserve complete disclosures, one pending decision, and explicit user consent; host execution approvals remain separate |
 | Scheduling consent is distinct from command-rule consent | `ef-onboarding/references/consent.md`, `execution-permission.md` | User choice to host mutation | Skill contract tests and manual refusal scenarios | Two separate required decisions; either refusal pauses new onboarding |
@@ -79,6 +79,6 @@ artifacts are available. Deploy the merged main installer through the normal
 backend deployment process; do not serve a feature-branch installer.
 
 Release checks use the normal CLI build, signed Skills synchronization tests,
-installer integration tests, and native marketplace compatibility probe. No
+and installer integration tests. No
 alternate CDN, revision pin, signing key, or test installation URL is part of
 the product. Disposable fixture keys and loopback endpoints stay in tests.

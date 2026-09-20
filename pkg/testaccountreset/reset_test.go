@@ -18,6 +18,8 @@ var testPatterns = []string{"@pgc.eigenflux.one", "*@pgc.eigenflux.one", "news*@
 	"???????@pgc.eigenflux.one", "news[!0-9]ot@pgc.eigenflux.one", "new[a-z]bot@pgc.eigenflux.one", "n[0-9]@pgc.eigenflux.one",
 	"reset[0-9]@pgc.eigenflux.one", "reset[1-9][0-9]@pgc.eigenflux.one"}
 
+var testGuard = Guard{TestPatterns: testPatterns, InternalSuffixes: []string{"@bot.eigenflux.one", "@pgc.eigenflux.one"}}
+
 func TestAllowed(t *testing.T) {
 	for email, want := range map[string]bool{
 		"reset0@pgc.eigenflux.one":    true,
@@ -30,12 +32,20 @@ func TestAllowed(t *testing.T) {
 		"someone@example.com":       false,
 		"":                          false,
 	} {
-		if got := Allowed(email, testPatterns); got != want {
+		if got := testGuard.Allowed(email); got != want {
 			t.Errorf("Allowed(%q) = %v, want %v", email, got, want)
 		}
 	}
-	if Allowed("reset0@pgc.eigenflux.one", nil) {
+	if (Guard{InternalSuffixes: testGuard.InternalSuffixes}).Allowed("reset0@pgc.eigenflux.one") {
 		t.Error("empty pattern list must allow nothing")
+	}
+	// A narrow pattern for an outside address is a config mistake, not a test account.
+	outside := Guard{TestPatterns: []string{"someone@example.com", "user[0-9]@example.com"}, InternalSuffixes: testGuard.InternalSuffixes}
+	if outside.Allowed("someone@example.com") || outside.Allowed("user3@example.com") {
+		t.Error("addresses outside the controlled domains must never be allowed")
+	}
+	if (Guard{TestPatterns: testPatterns}).Allowed("reset0@pgc.eigenflux.one") {
+		t.Error("empty controlled-domain list must allow nothing")
 	}
 }
 
@@ -168,11 +178,17 @@ func TestPostgresReset(t *testing.T) {
 	exec(`INSERT INTO agent_cli_account_switches (switch_id_hash, source_agent_id, principal_id, source_console_session_id, status, expires_at, created_at)
 		VALUES ($1, $2, $3, $4, 'pending_target', $5, $6)`, fmt.Sprintf("sw-%d", base), target, principal, session, now+3600000, now)
 
-	if _, err := ResetPostgres(ctx, db, otherEmail, testPatterns, true); !errors.Is(err, ErrNotTestAccount) {
+	if _, err := ResetPostgres(ctx, db, otherEmail, testGuard, true); !errors.Is(err, ErrNotTestAccount) {
 		t.Fatalf("non-test email: got %v, want ErrNotTestAccount", err)
 	}
 
-	plan, err := ResetPostgres(ctx, db, email, testPatterns, false)
+	exec(`UPDATE agents SET is_official = TRUE WHERE agent_id = $1`, target)
+	if _, err := ResetPostgres(ctx, db, email, testGuard, true); !errors.Is(err, ErrOfficial) {
+		t.Fatalf("official account: got %v, want ErrOfficial", err)
+	}
+	exec(`UPDATE agents SET is_official = FALSE WHERE agent_id = $1`, target)
+
+	plan, err := ResetPostgres(ctx, db, email, testGuard, false)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -195,7 +211,7 @@ func TestPostgresReset(t *testing.T) {
 
 	// An order event makes the account untouchable until a person has dealt with it.
 	exec(`INSERT INTO trade_order_events (event_id, order_id, event_type, actor_agent_id, created_at) VALUES ($1, $1, 1, $2, $3)`, base, target, now)
-	if _, err := ResetPostgres(ctx, db, email, testPatterns, true); !errors.Is(err, ErrHasTrades) {
+	if _, err := ResetPostgres(ctx, db, email, testGuard, true); !errors.Is(err, ErrHasTrades) {
 		t.Fatalf("account with trades: got %v, want ErrHasTrades", err)
 	}
 	if count(`SELECT count(*) FROM agents WHERE agent_id = $1`, target) != 1 || count(`SELECT count(*) FROM raw_items WHERE author_agent_id = $1`, target) != 1 {
@@ -203,7 +219,7 @@ func TestPostgresReset(t *testing.T) {
 	}
 	exec(`DELETE FROM trade_order_events WHERE event_id = $1`, base)
 
-	report, err := ResetPostgres(ctx, db, email, testPatterns, true)
+	report, err := ResetPostgres(ctx, db, email, testGuard, true)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -239,7 +255,7 @@ func TestPostgresReset(t *testing.T) {
 		}
 	}
 
-	again, err := ResetPostgres(ctx, db, email, testPatterns, true)
+	again, err := ResetPostgres(ctx, db, email, testGuard, true)
 	if err != nil || again.AgentID != 0 {
 		t.Fatalf("second reset: report=%+v err=%v", again, err)
 	}

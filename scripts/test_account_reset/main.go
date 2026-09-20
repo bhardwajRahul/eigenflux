@@ -44,9 +44,10 @@ func main() {
 	}
 
 	cfg := config.Load()
+	guard := testaccountreset.Guard{TestPatterns: cfg.OfficialTestEmailSuffixes, InternalSuffixes: cfg.PGCEmailSuffixes}
 	// Refuse the whole batch before touching anything if one address is not a test account.
 	for _, email := range emails {
-		if !testaccountreset.Allowed(email, cfg.OfficialTestEmailSuffixes) {
+		if !guard.Allowed(email) {
 			log.Fatalf("%s: %v", email, testaccountreset.ErrNotTestAccount)
 		}
 	}
@@ -63,7 +64,7 @@ func main() {
 
 	for _, email := range emails {
 		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
-		err := reset(ctx, db, cfg, email, *apply)
+		err := reset(ctx, db, cfg, guard, email, *apply)
 		cancel()
 		if err != nil {
 			log.Fatalf("%s: %v", email, err)
@@ -74,8 +75,8 @@ func main() {
 	}
 }
 
-func reset(ctx context.Context, db *sql.DB, cfg *config.Config, email string, apply bool) error {
-	plan, err := testaccountreset.ResetPostgres(ctx, db, email, cfg.OfficialTestEmailSuffixes, false)
+func reset(ctx context.Context, db *sql.DB, cfg *config.Config, guard testaccountreset.Guard, email string, apply bool) error {
+	plan, err := testaccountreset.ResetPostgres(ctx, db, email, guard, false)
 	if err != nil {
 		return err
 	}
@@ -141,7 +142,7 @@ func reset(ctx context.Context, db *sql.DB, cfg *config.Config, email string, ap
 	}
 	log.Printf("  deleted %d redis keys", n)
 
-	report, err := testaccountreset.ResetPostgres(ctx, db, email, cfg.OfficialTestEmailSuffixes, true)
+	report, err := testaccountreset.ResetPostgres(ctx, db, email, guard, true)
 	if err != nil {
 		return fmt.Errorf("postgres rolled back, safe to rerun: %w", err)
 	}

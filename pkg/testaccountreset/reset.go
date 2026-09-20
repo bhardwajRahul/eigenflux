@@ -31,10 +31,26 @@ var ErrHasTrades = errors.New("account has trading rows that involve a counterpa
 var narrowPattern = regexp.MustCompile(`^[a-z0-9._+-]{3,}(\[[0-9]-[0-9]\])*@[a-z0-9.-]+$`)
 
 // ErrNotTestAccount is returned for any email outside the test-account patterns.
-var ErrNotTestAccount = errors.New("email does not match a full-address OFFICIAL_TEST_EMAIL_SUFFIXES pattern")
+var ErrNotTestAccount = errors.New("not a test account: needs a PGC_EMAIL_SUFFIXES domain and a full-address OFFICIAL_TEST_EMAIL_SUFFIXES pattern")
 
-// Allowed reports whether email is a resettable test account.
-func Allowed(email string, patterns []string) bool {
+// ErrOfficial is returned for the official account, whatever its address.
+var ErrOfficial = errors.New("agent is flagged is_official")
+
+// Guard is the deployment's definition of a resettable address.
+type Guard struct {
+	TestPatterns     []string // OFFICIAL_TEST_EMAIL_SUFFIXES
+	InternalSuffixes []string // PGC_EMAIL_SUFFIXES: domains the company controls
+}
+
+// Allowed reports whether email is a resettable test account: it must sit on a
+// company-controlled domain, where no real user can own an address, and match a
+// narrow test-account pattern, which keeps the PGC fleet on that domain out.
+func (g Guard) Allowed(email string) bool {
+	email = NormalizeEmail(email)
+	return config.EmailMatchesAnySuffix(email, g.InternalSuffixes) && allowedByPattern(email, g.TestPatterns)
+}
+
+func allowedByPattern(email string, patterns []string) bool {
 	full := make([]string, 0, len(patterns))
 	for _, p := range patterns {
 		p = strings.TrimSpace(p)
@@ -43,7 +59,7 @@ func Allowed(email string, patterns []string) bool {
 		}
 		full = append(full, p)
 	}
-	return len(full) > 0 && config.EmailMatchesAnyPattern(NormalizeEmail(email), full)
+	return len(full) > 0 && config.EmailMatchesAnyPattern(email, full)
 }
 
 // NormalizeEmail mirrors the auth service's login normalization.
@@ -141,9 +157,9 @@ type Conv struct{ ID, A, B, Origin int64 }
 
 // ResetPostgres deletes the account's rows in one transaction. With apply=false
 // it runs the same statements as counts and changes nothing.
-func ResetPostgres(ctx context.Context, db *sql.DB, email string, patterns []string, apply bool) (*Report, error) {
+func ResetPostgres(ctx context.Context, db *sql.DB, email string, guard Guard, apply bool) (*Report, error) {
 	email = NormalizeEmail(email)
-	if !Allowed(email, patterns) {
+	if !guard.Allowed(email) {
 		return nil, fmt.Errorf("%q: %w", email, ErrNotTestAccount)
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -153,9 +169,13 @@ func ResetPostgres(ctx context.Context, db *sql.DB, email string, patterns []str
 	defer tx.Rollback()
 
 	report := &Report{Email: email, Applied: apply}
-	err = tx.QueryRowContext(ctx, `SELECT agent_id FROM agents WHERE email = $1 FOR UPDATE`, email).Scan(&report.AgentID)
+	var official bool
+	err = tx.QueryRowContext(ctx, `SELECT agent_id, is_official FROM agents WHERE email = $1 FOR UPDATE`, email).Scan(&report.AgentID, &official)
 	if err != nil && !errors.Is(err, sql.ErrNoRows) {
 		return nil, fmt.Errorf("look up agent: %w", err)
+	}
+	if official {
+		return nil, fmt.Errorf("%q: %w", email, ErrOfficial)
 	}
 
 	if report.AgentID != 0 {

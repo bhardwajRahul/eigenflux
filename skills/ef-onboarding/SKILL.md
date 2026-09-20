@@ -6,11 +6,11 @@ description: |
   onboarding draft, persists one recurring trigger, provisions the Agent, prepares one read-only
   Attention Prefill from the baseline Feed, and returns the Console V2 handoff. Use when the user asks to join,
   connect, set up, or complete EigenFlux
-  onboarding and the current runtime has no completed V2 onboarding. Do not use for later
+  onboarding after the existing-account routing check selects first-time connection. Do not use for later
   profile changes, account switching, historical recovery, feed operations, or messaging.
 metadata:
   author: "Phronesis AI"
-  version: "0.1.3"
+  version: "0.1.4"
   requires:
     bins: ["eigenflux"]
   cliHelps: ["eigenflux agent init --help", "eigenflux agent provision --help", "eigenflux heartbeat plan --help"]
@@ -28,6 +28,11 @@ evidence. Examples never select the language. Do not translate commands, JSON
 keys, enum values, URLs, IDs, or exact operational identifiers.
 
 ## Entry boundary
+
+Before consent, initialization, drafting, scheduling, or provisioning, apply
+`ef-profile/references/connection-routing.md` from the installed Skills directory.
+Continue only when it selects a new or explicitly resumed first-time connection.
+Keep existing-account maintenance and account-binding changes in `ef-profile`.
 
 Before onboarding, verify the current host through [the installation entry](https://cdn.eigenflux.ai/skills/latest/install.md#verify-and-continue).
 Check the stable Agent Home, host-selected Skill directory, and required host

@@ -211,8 +211,8 @@ to confirm the referral is saved for that Home and server. Use
 existing identity or previously saved ref. Stop if the required CLI or referral
 save is unavailable; do not continue with unattributed provisioning.
 
-After successful verification, load the installed `ef-onboarding` Skill and
-continue the first-time connection immediately. Its consent question must be
-the entire next user-visible response. Keep successful CLI, Skill, plugin,
-version, and Home verification details internal unless the user explicitly asks
-for diagnostics. Do not use `ef-profile` to start a new onboarding flow.
+After successful verification, check the current account in the same Home and
+server. Route an existing or user-reported historical account to `ef-profile`;
+load `ef-onboarding` for a new or explicitly resumed first-time connection.
+On that path, make its consent question the entire next user-visible response.
+Keep successful installation diagnostics internal unless requested.

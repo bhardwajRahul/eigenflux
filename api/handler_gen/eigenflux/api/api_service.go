@@ -2854,6 +2854,12 @@ func ConsoleGetActivityCalendar(ctx context.Context, c *app.RequestContext) {
 	sinceMs := time.Now().AddDate(0, 0, -int(days)).UnixMilli()
 	dateCounts, err := consoledal.CountActivityByDate(db.DB, agentID, sinceMs)
 	if err != nil {
+		logger.Ctx(ctx).Error("ConsoleGetActivityCalendar query failed",
+			"agentID", agentID,
+			"days", days,
+			"sinceMs", sinceMs,
+			"error", err,
+		)
 		writeJSON(c, http.StatusInternalServerError, 500, err.Error(), nil)
 		return
 	}

@@ -113,11 +113,14 @@ func reset(ctx context.Context, db *sql.DB, cfg *config.Config, guard testaccoun
 	// Elasticsearch and Redis go first: if either fails nothing in PostgreSQL has
 	// changed, the agent id is still resolvable, and the same command can be rerun.
 	if plan.AgentID != 0 {
-		n, err := items(ctx, plan.AgentID, apply)
+		n, left, err := items(ctx, plan.AgentID, apply)
 		if err != nil {
 			return fmt.Errorf("elasticsearch (postgres untouched, safe to rerun): %w", err)
 		}
 		log.Printf("  %s %d docs from %s (author_agent_id)", verb, n, es.ReadIndexPattern)
+		if left > 0 {
+			log.Printf("  WARNING: %d older docs stay in read-only lifecycle indices; the feed drops them because their rows are gone", left)
+		}
 	}
 	keys := testaccountreset.RedisKeys(plan, cfg.RecallRedisNamespace)
 	if !apply {
@@ -154,48 +157,45 @@ func reset(ctx context.Context, db *sql.DB, cfg *config.Config, guard testaccoun
 	return nil
 }
 
-// items counts, or with apply deletes, the agent's broadcasts in the items indices.
-func items(ctx context.Context, agentID int64, apply bool) (int64, error) {
+// items counts, or with apply deletes, the agent's broadcasts in the items
+// indices. left is how many could not be deleted because their index is
+// read-only (known only after a delete).
+func items(ctx context.Context, agentID int64, apply bool) (n, left int64, err error) {
 	body, _ := json.Marshal(map[string]any{"query": map[string]any{"term": map[string]any{"author_agent_id": agentID}}})
-	var (
-		status int
-		raw    []byte
-		field  = "count"
-	)
-	if apply {
-		field = "deleted"
-		res, err := es.Client.DeleteByQuery([]string{es.ReadIndexPattern}, bytes.NewReader(body),
-			es.Client.DeleteByQuery.WithContext(ctx), es.Client.DeleteByQuery.WithRefresh(true),
-			es.Client.DeleteByQuery.WithConflicts("proceed"))
-		if err != nil {
-			return 0, err
-		}
-		defer res.Body.Close()
-		status, raw = res.StatusCode, readAll(res.Body)
-	} else {
+	if !apply {
 		res, err := es.Client.Count(es.Client.Count.WithContext(ctx),
 			es.Client.Count.WithIndex(es.ReadIndexPattern), es.Client.Count.WithBody(bytes.NewReader(body)))
 		if err != nil {
-			return 0, err
+			return 0, 0, err
 		}
 		defer res.Body.Close()
-		status, raw = res.StatusCode, readAll(res.Body)
+		raw := readAll(res.Body)
+		if res.StatusCode >= 300 {
+			return 0, 0, fmt.Errorf("status %d: %s", res.StatusCode, raw)
+		}
+		var parsed struct {
+			Count int64 `json:"count"`
+		}
+		if err := json.Unmarshal(raw, &parsed); err != nil {
+			return 0, 0, err
+		}
+		return parsed.Count, 0, nil
 	}
-	if status >= 300 {
-		return 0, fmt.Errorf("status %d: %s", status, raw)
+	res, err := es.Client.DeleteByQuery([]string{es.ReadIndexPattern}, bytes.NewReader(body),
+		es.Client.DeleteByQuery.WithContext(ctx), es.Client.DeleteByQuery.WithRefresh(true),
+		es.Client.DeleteByQuery.WithConflicts("proceed"))
+	if err != nil {
+		return 0, 0, err
 	}
-	var parsed map[string]any
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		return 0, err
+	defer res.Body.Close()
+	raw := readAll(res.Body)
+	// Write-blocked documents make the whole response a 403 although the body is
+	// a normal result, so the body decides, not the status.
+	n, left, err = testaccountreset.DeleteByQueryResult(raw)
+	if err != nil {
+		return n, left, fmt.Errorf("status %d: %w", res.StatusCode, err)
 	}
-	if failures, _ := parsed["failures"].([]any); len(failures) > 0 || parsed["timed_out"] == true {
-		return 0, fmt.Errorf("incomplete delete: %s", raw)
-	}
-	if conflicts, _ := parsed["version_conflicts"].(float64); conflicts > 0 {
-		return 0, fmt.Errorf("%v version conflicts; rerun", conflicts)
-	}
-	n, _ := parsed[field].(float64)
-	return int64(n), nil
+	return n, left, nil
 }
 
 func readAll(r io.Reader) []byte {

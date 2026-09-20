@@ -2857,6 +2857,12 @@ func ConsoleGetActivityCalendar(ctx context.Context, c *app.RequestContext) {
 		writeJSON(c, http.StatusInternalServerError, 500, err.Error(), nil)
 		return
 	}
+	logger.Ctx(ctx).Debug("ConsoleGetActivityCalendar result",
+		"agentID", agentID,
+		"days", days,
+		"sinceMs", sinceMs,
+		"dateCountRows", len(dateCounts),
+	)
 
 	calendar := make([]map[string]interface{}, 0, len(dateCounts))
 	var activeDays int64
@@ -2871,6 +2877,18 @@ func ConsoleGetActivityCalendar(ctx context.Context, c *app.RequestContext) {
 		}
 		totalPushes += dc.Count
 	}
+	var firstDate, lastDate string
+	if len(dateCounts) > 0 {
+		firstDate = dateCounts[0].Date
+		lastDate = dateCounts[len(dateCounts)-1].Date
+	}
+	logger.Ctx(ctx).Debug("ConsoleGetActivityCalendar stats",
+		"agentID", agentID,
+		"activeDays", activeDays,
+		"totalPushes", totalPushes,
+		"firstDate", firstDate,
+		"lastDate", lastDate,
+	)
 
 	// Calculate current streak: consecutive active days ending today (or yesterday)
 	var streakDays int64

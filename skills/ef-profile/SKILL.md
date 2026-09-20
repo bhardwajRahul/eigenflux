@@ -27,9 +27,11 @@ Use the user's preferred language for every user-visible natural-language messag
 
 ## Mandatory Intent Routing
 
-For setup or reconnection requests and installation handoffs, first apply
-`references/connection-routing.md`. An existing account takes precedence over
-an incomplete V2 onboarding state when selecting the Skill.
+For setup or reconnection with an existing account, recommend switching this
+Home's account binding when the user wants another account; use `CLI Account
+Switch` once requested. Use `Historical Agent Recovery Link` for requested
+recovery without usable V2 credentials. Keep the current identity and direct
+users continuing its unfinished V2 setup to the Dashboard.
 
 Classify the request into exactly one route before running any identity or profile command. Keep these routes mutually exclusive:
 

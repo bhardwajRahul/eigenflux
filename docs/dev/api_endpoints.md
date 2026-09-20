@@ -499,3 +499,22 @@ and reports missing rules instead of using a compiled business-policy copy.
 ## Console Commission reviews
 
 `GET /api/v2/console/bff/trade/commissions/:commission_id/reviews` requires the existing Console session and Commission access gate. The BFF forwards only `cursor` and `limit`, deriving the subject from the session. It delegates to `GET /api/v1/commissions/:commission_id/reviews` with scope `commissions:reviews:read` and operation `console.trade.commissions.reviews.list`. The ID must be a canonical positive int64 decimal. Commission retains its existing visibility checks and returns `reviews` and `next_cursor`; the BFF does not invent a total. Deploy Commission support for this delegated operation before the BFF and website changes.
+
+## Console V2 Attention Prefill Actions
+
+`attention_phase: "prefill"` records onboarding provenance and remains unchanged
+when onboarding completes. Prefill publication remains restricted to baseline
+Feed broadcasts, the permitted preset actions, and an empty context reference.
+
+Before onboarding completes, Console action routes return `ONBOARDING_REQUIRED`;
+the Attention response and dismissal handlers additionally enforce
+`ATTENTION_ONBOARDING_REQUIRED`. After completion, unexpired open Prefill items
+support their uploaded actions and dismissal when a valid active context exists.
+A missing active context returns `ATTENTION_CONTEXT_STALE`.
+
+Responses preserve the existing item-revision check, per-Agent idempotency,
+command snapshot, runtime claim, and completion receipt. The command binds to the
+active context at selection time. Repeated requests with the same idempotency key
+return the current command and item state, including after completion; a different
+key cannot select another terminal action while the item is pending or acted.
+No migration or conversion of existing Prefill rows to `active` is required.

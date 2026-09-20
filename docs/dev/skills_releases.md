@@ -92,6 +92,14 @@ metadata without recursively scanning unrelated Skills. Missing paths are valid
 for first installation. File completeness and provisional status are separate:
 an intact provisional bundle remains usable offline and is refreshed online.
 
+Before content replacement, the client also reads existing official directories
+identified by the remote manifest when local metadata is missing or corrupt, and
+third-party directories that must be preserved. Unchanged checks and metadata-only
+refreshes do not scan third-party content. Before recovery or replacement cleans
+the staging directory, its directory traversal is checked without reading the
+contents of files being deleted. These checks report permission failures before
+creating the update lock; filesystem operations still recheck access under lock.
+
 Permission failures return nonzero even with `--quiet`. The existing command
 error output includes `SKILLS_PERMISSION_REQUIRED`, the operation and original
 filesystem error (including its path), and instructions for the Agent to explain

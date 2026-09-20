@@ -16,7 +16,7 @@ import (
 	"gorm.io/gorm"
 )
 
-func TestSwitchEmailPostgres(t *testing.T) {
+func TestPostgresCLIAccountSwitchEmail(t *testing.T) {
 	dsn := os.Getenv("PG_DSN")
 	if dsn == "" {
 		t.Skip("PG_DSN required")

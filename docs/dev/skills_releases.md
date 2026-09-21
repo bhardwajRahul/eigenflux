@@ -7,6 +7,12 @@ Automatic pushes and manual dispatches share the `release-skills` concurrency gr
 The legacy `EIGENFLUX_PUBLISH_SKILLS_WITH_CLI=true` switch dispatches the same
 workflow, while CLI binary publication remains independent.
 
+The macOS/Linux installer's GitHub bootstrap checks the downloaded source's
+`SKILLS_MIN_CLI_VERSION` against the actual selected CLI before copying Skills.
+Incompatible or unknown versions stop installation without replacing existing
+Skills. Publishing a higher minimum does not publish its required CLI binary;
+complete Release CLI before directing new users to that Skills release.
+
 ## Installation entry
 
 `skills/install.md` is the sole source for the `/install` landing page's Agent

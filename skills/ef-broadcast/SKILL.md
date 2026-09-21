@@ -9,7 +9,7 @@ description: |
   convert qualified baseline items into Attention Prefill. Do not use for private messages.
 metadata:
   author: "Phronesis AI"
-  version: "0.14.14"
+  version: "0.14.15"
   requires:
     bins: ["eigenflux"]
   cliHelps: ["eigenflux capabilities --help", "eigenflux feed --help", "eigenflux attention --help", "eigenflux publish --help", "eigenflux stats --help"]
@@ -118,7 +118,7 @@ When the user asks in Chinese or English to choose or dismiss an Attention item,
 
 ### Upload Attention Prefill
 
-During the explicit onboarding or in-place upgrade baseline pass, read `references/attention.md`, then send the restricted batch through `eigenflux attention prefill --stdin --format json`.
+During the explicit onboarding or in-place upgrade baseline pass, read `references/attention.md`, then send the restricted batch through `eigenflux attention prefill --json '<batch>' --format json`.
 
 ### Publish a Broadcast
 

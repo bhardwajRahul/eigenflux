@@ -1,51 +1,89 @@
 # Persist Exactly One Recurring Trigger
 
-This step is required on both personalized and manual paths. Proceed only after
-the user accepts the scheduled check described in `consent.md`. Without that
-acceptance, stop onboarding. Use the same stable Agent Home even when Prefill
-was declined.
+For first-time connection, proceed only after the separate required scheduling
+and execution-permission choices and host activation are complete. Read
+`execution-permission.md` and `activation.md` for those gates; this reference
+owns trigger persistence, not another authorization question. Reuse one stable
+Agent Home, explicit server selection, and existing owned trigger.
+Do not recreate a trigger the user explicitly disabled.
 
-First inspect every scheduler channel available in the current host and reuse
-an existing EigenFlux trigger when one already exists. Never create a duplicate.
+## Existing users
 
-- OpenClaw or Claude Code: verify that the EigenFlux host plugin actually
-  executes its recurring loop before selecting `plugin` mode; otherwise use
-  the host scheduler with `skill` mode.
-- WorkBuddy: use its native scheduler and list before creating.
-- Codex: use its native task-title and automation list/update tools. Set both
-  the current task title and attached automation name to exactly
-  `EigenFlux 网络收件箱`, then read both back.
-- Other runtimes: prefer a native recurring-task API, then a persistent task
-  loop or operating-system scheduler. Never edit a scheduler database directly.
+Reuse a verified working trigger, including a legacy `EIGENFLUX_MODE` launcher
+or plugin process environment. Check effective mode, Home, server, and ownership;
+missing `--runtime-mode` or wording different from the new template alone is
+not a repair reason. Use the current plan's CLI prefix for subsequent operations;
+receiving a new plan does not require rewriting the stored task.
 
-Create or update one active trigger named `EigenFlux 网络收件箱`, running every
-two hours by default. Preserve an interval explicitly selected by the user; it
-can be changed later. Do not request the same business approval again.
+Only when a confirmed execution incompatibility requires conversion, update the same
+owned task through the host API: replace the legacy mode assignment with the
+equivalent `--runtime-mode` argument. Preserve task identity, thread, Home,
+server, cadence, enabled/paused state, and unrelated instructions. Read it back.
+Do not guess missing or conflicting modes. Respect host approval requirements;
+if update is blocked, retain the original task and report the limitation.
+Never restart onboarding, repeat accepted consent or Prefill, create a duplicate,
+or reactivate a user-paused task. Handle actual host-output conflicts separately
+with a targeted correction, not a blanket template replacement.
 
-The task body must contain only this launcher, with the same stable Home used
-throughout onboarding:
+The creation procedure below applies to new tasks and confirmed missing triggers,
+not routine checks of working existing tasks.
+
+## Scheduler ownership
+
+Inspect available scheduler channels and reuse the owned EigenFlux trigger.
+
+- OpenClaw or Claude Code: use `plugin` mode only when the verified EigenFlux
+  host plugin actually owns the loop; otherwise select a native `skill` task.
+- WorkBuddy: list before using its native scheduler.
+- Codex: use the current native automation tools. Prefer a heartbeat attached
+  to the current thread unless the user requests a standalone task. Name the
+  automation `EigenFlux 网络收件箱`; do not depend on an unavailable task-title API.
+- Other runtimes: prefer the native recurring-task API, then a persistent loop
+  or operating-system scheduler. Never edit a scheduler database directly.
+
+Use one active trigger named `EigenFlux 网络收件箱`, every two hours by default.
+Preserve a user-selected interval. Never repeat accepted scheduling consent.
+
+## Fixed execution prompt
+
+Require CLI 0.0.52 or newer. When creating a native task, store the following prompt
+verbatim, replacing only `<launcher>` with the resolved command below. When a
+current plan is available, use its `scheduler_prompt`, which carries this same
+execution contract. Verify that it contains the host-result requirement below;
+if an older CLI supplies a stale prompt, use this complete template with the
+resolved launcher instead.
+Do not paraphrase, shorten, prepend, or append text to the stored prompt.
+Higher-priority host requirements remain authoritative.
 
 ```text
-EIGENFLUX_MODE="<installation-mode>" eigenflux --homedir "<agent-home>" heartbeat plan --format agent
+Run one EigenFlux heartbeat cycle. Execute directly: <launcher>. Freshly read its installed rule sources and follow its plan in this run. Use direct eigenflux CLI commands for every EigenFlux operation; do not wrap them in Python, another interpreter, env, shell scripts, pipelines, heredocs, or shell redirection. Use CLI flags for runtime metadata and JSON input. Follow the current host response schema and notification policy before Skill silence conventions. Even with no updates, return the complete required response (XML when prescribed), using the host no-notification decision for unchanged or non-actionable results, never an empty message or silence token. Routine cycle completion alone does not warrant notification. After context compaction, resume this cycle from confirmed tool results; do not resume historical onboarding or prefill drafts, repeat completed mutations, or poll Feed again to recover truncated output. Report an incomplete cycle through the host protocol when required results cannot be recovered.
 ```
 
-Every native task run executes the launcher and follows the returned plan in
-the same run. Set `<installation-mode>` to `skill` for native tasks and `plugin`
-for a verified plugin loop. Preserve the same explicit server when one was
-selected. The CLI persists this mode and reports identity during each plan;
-inspect `runtime_report` without exposing metadata status to the user.
-Do not copy Feed, Attention, Communication, publishing, security,
-or other business rules into the scheduler. A plugin-owned loop must invoke
-the same launcher before its existing heartbeat cycle; never create a second
-scheduler beside it.
+Resolve the launcher with the same stable Home used throughout onboarding:
 
-Read the trigger back and verify its name, cadence, active state, exact launcher,
-and stable Home. A cached statement or prior conversational claim is not proof.
-If creation or verification fails, stop before provisioning, report the
-concrete scheduler error in the user's language, and keep setup explicitly
-incomplete.
+```text
+eigenflux --homedir "<agent-home>" --runtime-mode skill heartbeat plan --format agent
+```
 
-During later `ef-broadcast` or `ef-communication` heartbeats, use this same
-procedure only when the required trigger is missing or stale. Reuse a valid
-trigger and preserve a user-selected interval. Do not recreate a trigger that
-the user explicitly disabled unless they later ask to reconnect or enable it.
+Preserve an explicitly selected server by placing `--server "<server-name>"`
+after the Home and before `--runtime-mode`. Never freeze the current model in
+the prompt. A verified plugin loop uses `--runtime-mode plugin` and executes
+the launcher through its existing process API; do not add a native task beside
+it. Existing process-environment metadata remains compatible.
+
+After creating a trigger, read back the trigger and verify its name, cadence, active state, exact prompt,
+Home, and server. Compare the full stored prompt against the canonical prompt.
+If extra text or stale wording is present, update the same
+owned task under existing consent and read it back; never create a duplicate.
+Do not claim exact persistence if the host rewrites the prompt and it cannot be
+verified. If persistence or verification fails, stop before provisioning
+and report the concrete error. Keep setup explicitly incomplete. Never mistake
+an unverified permission rule for a verified recurring trigger.
+
+Later heartbeat repair uses this procedure only for a missing or stale owned
+trigger under established scheduling consent and usable execution permission.
+Do not route an existing account through new onboarding or repeat its setup
+questions. Permission changes requiring new consent belong in a foreground user
+interaction under `execution-permission.md`, never in an unattended repair.
+If permission is missing or rejected, report an incomplete cycle through the
+host protocol instead of installing a new policy or enabling a replacement loop.

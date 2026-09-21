@@ -359,9 +359,9 @@ install_skills() {
     return
   fi
 
-  info "R2 unreachable — bootstrapping skills from GitHub (provisional, replaced on next sync)"
+  info "Skills sync failed — checking GitHub bootstrap compatibility"
 
-  # Fallback ONLY when R2 is down. The bootstrap copy is marked provisional
+  # The version-checked bootstrap copy is marked provisional
   # (.ef-stale) and has no cli_version manifest, so the next `skills sync`
   # bypasses its --if-stale short-circuit and force-replaces it from R2.
   # Resolve the host's real load dir via the CLI (offline path resolution) so a
@@ -383,6 +383,23 @@ install_skills() {
   if [ ! -d "$SRC_SKILLS" ]; then
     info "Skills installation skipped (no skills found)"
     return
+  fi
+
+  # The source branch may require a CLI that has not been published yet.
+  # Read its minimum as data; never execute a downloaded configuration file.
+  BOOTSTRAP_MIN_CLI=$(sed -n 's/^SKILLS_MIN_CLI_VERSION=//p' "$TMP_DIR/$EXTRACTED/cli/.cli.config" 2>/dev/null || true)
+  BOOTSTRAP_CLI_VERSION=$("$EF_BIN" version --short 2>/dev/null || true)
+  if ! awk -v current="$BOOTSTRAP_CLI_VERSION" -v minimum="$BOOTSTRAP_MIN_CLI" 'BEGIN {
+    if (current !~ /^[0-9]+\.[0-9]+\.[0-9]+$/ || minimum !~ /^[0-9]+\.[0-9]+\.[0-9]+$/) exit 1
+    split(current, have, "."); split(minimum, need, ".")
+    for (i=1; i<=3; i++) {
+      if (have[i]+0 > need[i]+0) exit 0
+      if (have[i]+0 < need[i]+0) exit 1
+    }
+    exit 0
+  }'; then
+    err "GitHub Skills require CLI >= ${BOOTSTRAP_MIN_CLI:-unknown}; installed CLI is ${BOOTSTRAP_CLI_VERSION:-unknown}. No Skills were replaced. Retry after a compatible CLI release is available."
+    return 1
   fi
 
   mkdir -p "$SKILLS_DIR"

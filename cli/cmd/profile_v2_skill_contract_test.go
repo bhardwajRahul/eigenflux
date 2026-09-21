@@ -104,7 +104,7 @@ func TestOnboardingSkillContract(t *testing.T) {
 
 	entry := readRepoFile(t, repoRoot, "skills/ef-onboarding/SKILL.md")
 	for _, required := range []string{
-		`version: "0.2.10"`,
+		`version: "0.2.11"`,
 		"references/consent.md",
 		"Treat incomplete V2 setup as existing-account maintenance",
 		"only when the user explicitly requests it",
@@ -214,7 +214,7 @@ func TestConsoleV2SchedulerPromptMatchesCLI(t *testing.T) {
 	if !strings.HasPrefix(launcher, "eigenflux --homedir ") || !strings.Contains(launcher, "--runtime-mode skill heartbeat plan") {
 		t.Fatalf("launcher is not a direct, mode-explicit CLI call: %s", launcher)
 	}
-	for _, required := range []string{"reuse the owned EigenFlux trigger", "OpenClaw or Claude Code", "WorkBuddy", "Codex", "Read back the trigger", "Compare the full stored prompt", "Do not paraphrase, shorten, prepend, or append", "update the same"} {
+	for _, required := range []string{"reuse the owned EigenFlux trigger", "OpenClaw or Claude Code", "WorkBuddy", "Codex", "read back the trigger", "Compare the full stored prompt", "Do not paraphrase, shorten, prepend, or append", "update the same"} {
 		if !strings.Contains(reference, required) {
 			t.Errorf("scheduler contract missing %q", required)
 		}
@@ -314,7 +314,7 @@ func TestOnboardingAuthorizationAndActivationBoundaries(t *testing.T) {
 		},
 		"skills/ef-onboarding/references/recurring-trigger.md": {
 			"separate required scheduling", "execution-permission choices and host activation",
-			"explicit server selection", "Read back the trigger",
+			"explicit server selection", "read back the trigger",
 		},
 	}
 	for file, fragments := range requiredByFile {
@@ -466,5 +466,22 @@ func TestHeartbeatQuietResultsPreserveHostProtocol(t *testing.T) {
 	}
 	if !strings.Contains(prompt, "never an empty message or silence token") {
 		t.Fatal("scheduler prompt does not preserve required quiet host output")
+	}
+}
+
+func TestExistingSchedulerCompatibilityContract(t *testing.T) {
+	root, err := filepath.Abs("../..")
+	if err != nil {
+		t.Fatal(err)
+	}
+	reference := readRepoFile(t, root, "skills/ef-onboarding/references/recurring-trigger.md")
+	for _, required := range []string{"Reuse a verified working trigger", "legacy `EIGENFLUX_MODE`", "not a repair reason", "confirmed execution incompatibility", "Preserve task identity, thread, Home", "enabled/paused state", "Do not guess missing or conflicting modes", "Respect host approval requirements", "retain the original task", "Never restart onboarding"} {
+		if !strings.Contains(reference, required) {
+			t.Errorf("missing compatibility boundary %q", required)
+		}
+	}
+	broadcast := readRepoFile(t, root, "skills/ef-broadcast/SKILL.md")
+	if !strings.Contains(broadcast, "effective mode supplied by `--runtime-mode` or legacy") || strings.Contains(broadcast, "server, and explicit `--runtime-mode`") {
+		t.Fatal("legacy modes must satisfy trigger validation")
 	}
 }

@@ -1,6 +1,11 @@
 #!/bin/sh
 set -e
 
+# Keep the development marker for automatic patch releases. Change it to a
+# higher X.Y.Z to request a specific release; publication never edits this file.
+INSTALLER_VERSION="0.0.0-dev"
+INSTALLER_SOURCE_COMMIT="development"
+
 # ============================================================
 # EigenFlux CLI Installer
 # Published independently by the Release Installer workflow after PR merges.
@@ -36,6 +41,10 @@ HOMEDIR_FLAG=""
 EXPLICIT_EIGENFLUX_HOME="${EIGENFLUX_HOME:-}"
 while [ $# -gt 0 ]; do
   case "$1" in
+    --version)
+      printf 'eigenflux-installer %s (source %s)\n' "$INSTALLER_VERSION" "$INSTALLER_SOURCE_COMMIT"
+      exit 0
+      ;;
     --ref)
       INSTALL_REF="${2:-}"
       shift
@@ -60,6 +69,7 @@ while [ $# -gt 0 ]; do
       printf '  --host NAME         Host doing the install: openclaw|claude-code|codex|terminal\n'
       printf '                      (default: auto-detected from the environment)\n'
       printf '  --homedir PATH      Explicit EigenFlux Agent Home (highest priority)\n'
+      printf '  --version           Show installer version without installing\n'
       printf '  --help              Show this help\n\n'
       printf 'Environment:\n'
       printf '  EIGENFLUX_SETUP_HOSTS       "all", or a comma-separated host list, to also set up\n'
@@ -1111,6 +1121,7 @@ report_attribution() {
 
 # ── Main ──────────────────────────────────────────────────────
 
+info "EigenFlux installer ${INSTALLER_VERSION} (source ${INSTALLER_SOURCE_COMMIT})"
 install_cli
 report_attribution
 install_skills

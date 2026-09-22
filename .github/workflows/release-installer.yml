@@ -38,10 +38,12 @@ jobs:
         if: steps.changed.outputs.installer == 'true'
         with:
           ref: main
+          fetch-depth: 0
           persist-credentials: false
       - name: Test installer and publisher
         if: steps.changed.outputs.installer == 'true'
         run: |
+          aws s3api put-object --generate-cli-skeleton input | python3 -c 'import json,sys; fields=json.load(sys.stdin); assert "IfMatch" in fields and "IfNoneMatch" in fields'
           sh -n static/install.sh
           python3 -m unittest discover -s tests/cli_release -p 'test_*install*.py'
           python3 -m unittest discover -s tests/installer_release -p 'test_*.py'
@@ -53,3 +55,11 @@ jobs:
           R2_ENDPOINT: ${{ secrets.R2_ENDPOINT }}
           R2_BUCKET: ${{ secrets.R2_BUCKET }}
         run: python3 scripts/release/publish-installer.py
+      - name: Save release metadata (no installer archive)
+        if: always() && steps.changed.outputs.installer == 'true'
+        uses: actions/upload-artifact@v4
+        with:
+          name: installer-release-${{ github.run_id }}-${{ github.run_attempt }}
+          path: build/installer-release.json
+          if-no-files-found: ignore
+          retention-days: 90

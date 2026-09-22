@@ -81,6 +81,7 @@ type Service struct {
 	testEmailPatterns        []string
 	testOTP                  string
 	publicURL                string
+	allowedOrigins           []string
 	secureCookie             bool
 	emailSender              mailservice.Sender
 	emailQueue               chan emailJob
@@ -147,8 +148,17 @@ func NewService(gdb *gorm.DB, idgen IDGenerator, cfg *config.Config) (*Service, 
 	}
 	publicURL := strings.TrimRight(strings.TrimSpace(cfg.ConsoleV2PublicURL), "/")
 	parsed, err := url.Parse(publicURL)
-	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return nil, errors.New("CONSOLE_V2_PUBLIC_URL must be an absolute URL")
+	if err != nil || !validConsoleOriginURL(publicURL) {
+		return nil, errors.New("CONSOLE_V2_PUBLIC_URL must be an HTTP(S) origin")
+	}
+	allowedOrigins := make([]string, 0, len(cfg.ConsoleV2AllowedOrigins))
+	for _, value := range cfg.ConsoleV2AllowedOrigins {
+		origin := strings.TrimSpace(value)
+		candidate, parseErr := url.Parse(origin)
+		if parseErr != nil || !validConsoleOriginURL(origin) || candidate.Scheme != parsed.Scheme {
+			return nil, errors.New("CONSOLE_V2_ALLOWED_ORIGINS must contain HTTP(S) origins with the same scheme as CONSOLE_V2_PUBLIC_URL")
+		}
+		allowedOrigins = append(allowedOrigins, origin)
 	}
 	if strings.TrimSpace(cfg.ConsoleV2OTPPepper) == "" {
 		return nil, errors.New("CONSOLE_V2_OTP_PEPPER is required")
@@ -185,6 +195,7 @@ func NewService(gdb *gorm.DB, idgen IDGenerator, cfg *config.Config) (*Service, 
 		testEmailPatterns:        append([]string(nil), cfg.OfficialTestEmailSuffixes...),
 		testOTP:                  strings.TrimSpace(cfg.OfficialTestOTP),
 		publicURL:                publicURL,
+		allowedOrigins:           allowedOrigins,
 		secureCookie:             parsed.Scheme == "https",
 		enableFeed:               cfg.EnableFeedV2,
 		enableControl:            cfg.EnableControlChannelV2,
@@ -304,22 +315,32 @@ func (s *Service) CommunicationFriendRequestsHandler() app.HandlerFunc {
 	return s.listCommunicationFriendRequests
 }
 
-func validConsoleSameOrigin(origin, host, expectedURL string) bool {
-	expected, err := url.Parse(expectedURL)
-	if err != nil || expected.Scheme == "" || expected.Host == "" || !strings.EqualFold(host, expected.Host) {
+func validConsoleOriginURL(origin string) bool {
+	u, err := url.Parse(origin)
+	return err == nil && (u.Scheme == "https" || u.Scheme == "http") && u.Hostname() != "" &&
+		u.User == nil && u.Path == "" && u.RawQuery == "" && !u.ForceQuery &&
+		!strings.Contains(origin, "#") && !strings.Contains(u.Host, "*")
+}
+
+func validConsoleSameOrigin(origin, host, expectedURL string, additionalOrigins ...string) bool {
+	if !validConsoleOriginURL(origin) {
 		return false
 	}
-	provided, err := url.Parse(origin)
-	if err != nil || provided.User != nil || provided.RawQuery != "" || provided.Fragment != "" ||
-		provided.Path != "" || provided.Scheme == "" || provided.Host == "" {
+	provided, _ := url.Parse(origin)
+	if !strings.EqualFold(host, provided.Host) {
 		return false
 	}
-	return strings.EqualFold(provided.Scheme, expected.Scheme) && strings.EqualFold(provided.Host, expected.Host)
+	for _, expected := range append([]string{expectedURL}, additionalOrigins...) {
+		if validConsoleOriginURL(expected) && strings.EqualFold(origin, expected) {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Service) requireSameOrigin() app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		if !validConsoleSameOrigin(string(c.GetHeader("Origin")), string(c.Host()), s.publicURL) {
+		if !validConsoleSameOrigin(string(c.GetHeader("Origin")), string(c.Host()), s.publicURL, s.allowedOrigins...) {
 			fail(c, http.StatusForbidden, "ORIGIN_INVALID", "Console V2 request origin is invalid", nil)
 			c.Abort()
 			return
@@ -662,7 +683,7 @@ type consoleSession struct {
 
 func (s *Service) consoleAuth(requireCSRF bool) app.HandlerFunc {
 	return func(ctx context.Context, c *app.RequestContext) {
-		if requireCSRF && !validConsoleSameOrigin(string(c.GetHeader("Origin")), string(c.Host()), s.publicURL) {
+		if requireCSRF && !validConsoleSameOrigin(string(c.GetHeader("Origin")), string(c.Host()), s.publicURL, s.allowedOrigins...) {
 			fail(c, http.StatusForbidden, "ORIGIN_INVALID", "Console V2 request origin is invalid", nil)
 			c.Abort()
 			return

@@ -12,6 +12,10 @@ on:
       - 'skills/**'
       - 'static/install.sh'
       - 'tests/cli_release/**'
+      - 'tests/installer_release/**'
+      - 'scripts/release/publish-installer.py'
+      - '.github/workflows/release-installer.yml'
+      - 'api/install/shell_installer*.go'
       - 'tests/installhome/**'
       - 'tests/installentry/**'
       - 'cli/tests/**'
@@ -30,6 +34,10 @@ on:
       - 'skills/**'
       - 'static/install.sh'
       - 'tests/cli_release/**'
+      - 'tests/installer_release/**'
+      - 'scripts/release/publish-installer.py'
+      - '.github/workflows/release-installer.yml'
+      - 'api/install/shell_installer*.go'
       - 'tests/installhome/**'
       - 'tests/installentry/**'
       - 'cli/tests/**'
@@ -69,6 +77,7 @@ jobs:
         working-directory: .
         run: |
           python3 -m unittest discover -s tests/cli_release -p 'test_*.py'
+          python3 -m unittest discover -s tests/installer_release -p 'test_*.py'
           go test ./tests/installhome ./tests/installentry ./api/install
       - name: Build Windows test binary
         if: runner.os == 'Windows'

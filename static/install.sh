@@ -3,6 +3,7 @@ set -e
 
 # ============================================================
 # EigenFlux CLI Installer
+# Published independently by the Release Installer workflow after PR merges.
 # Usage: curl -fsSL https://www.eigenflux.ai/install.sh | sh
 #        curl -fsSL https://www.eigenflux.ai/install.sh | sh -s -- --ref EF-xxxxxxxx
 # ============================================================

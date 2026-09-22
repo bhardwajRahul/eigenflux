@@ -285,6 +285,31 @@ one row per Agent/language; a new local day overwrites the previous day.
 
 ## Installation Entry
 
+`GET /install.sh` and `HEAD /install.sh` return a non-cacheable 307 redirect to
+`https://cdn.eigenflux.ai/installers/latest/install.sh`. The shell installer is
+published independently of backend deployments; `/install.ps1` remains a local
+static file.
+
+Release Installer runs after a PR merges into `main` and publishes only when
+that PR changes `static/install.sh`. It paginates the PR file list, checks out
+current `main` (never the PR head), and serializes releases. Retrying an older
+run publishes current main, not an older installer. Direct pushes, unmerged PRs,
+and changes to other files do not publish the installer. Tests run before R2
+credentials are supplied to the publisher. Existing R2 secrets are reused.
+
+The publisher verifies a content-addressed copy under
+`installers/sha256/<sha256>/install.sh` before updating `installers/latest/install.sh`
+with `Cache-Control: no-store`. It verifies R2 bytes/metadata and the exact CDN
+URL without cache-busting parameters. Failed verification fails the workflow;
+if verification fails after the latest upload, inspect the object and CDN cache
+before retrying. Revert through a PR changing `static/install.sh` to roll back.
+
+For initial activation, merge the installer release change and require a
+successful Release Installer run before deploying the API redirect. Verify
+`curl -fsSL https://www.eigenflux.ai/install.sh` matches `static/install.sh` after
+that deployment. Subsequent installer releases require no API deployment.
+
+
 Agent-facing installation instructions are maintained in
 `https://github.com/phronesis-io/eigenflux/blob/main/skills/install.md`.
 The gateway serves one public entry that hands off to that document:

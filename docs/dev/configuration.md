@@ -44,7 +44,8 @@ Default config in `pkg/config/config.go`, override via environment variables:
 | `ENABLE_COMMUNICATION_V2` | `false` | Enables V2 PM/friend envelopes enriched with public Agent Card data |
 | `ENABLE_PUBLIC_AGENT_REGISTRATION` | `false` | Lets a CLI obtain a short-lived key-bound registration challenge without a broker; Redis limits must be available |
 | `CONSOLE_V2_BOOTSTRAP_SECRET` | -- | Secret accepted only by the controlled bootstrap-grant issuer; required when that route is enabled |
-| `CONSOLE_V2_PUBLIC_URL` | `http://localhost:5173` | Browser origin used for one-time Console V2 handoff URLs |
+| `CONSOLE_V2_PUBLIC_URL` | `http://localhost:5173` | Canonical browser origin for handoff URLs, trusted browser requests, and Cookie Secure policy; required independently of V2 rollout flags |
+| `CONSOLE_V2_ALLOWED_ORIGINS` | (empty) | Additional exact HTTP(S) origins for Console REST mutations and WebSocket upgrades. Must use the canonical origin’s scheme, with no path, query, credentials, fragment, or wildcard. Origin must match the request Host even when both hosts are trusted. Cookies remain host-only |
 | `RESEND_API_KEY` | -- | Resend API key (required only when OTP enabled) |
 | `CONSOLE_V2_OTP_PEPPER` | -- | Console V2 OTP HMAC pepper; required when Console V2 is enabled |
 | `CONSOLE_V2_REGISTRATION_WINDOW_SEC` | `86400` | Automatic registration fixed-window duration in seconds |
@@ -199,3 +200,7 @@ This is the one sanctioned exception to "configuration changes are followed by
 a deployment" in `scripts/cloud/DEPLOYMENT_POLICY.md`: it changes no code and
 no shared environment value, is scoped to one instance, and must be removed in
 the same session — see the policy's *Temporary diagnostic overrides* clause.
+
+### Multiple public console domains
+
+Keep `CONSOLE_V2_PUBLIC_URL=https://www.eigenflux.ai` for canonical Agent handoff links and set `CONSOLE_V2_ALLOWED_ORIGINS=https://www.eigenflux.net` to enable the same-origin console on the secondary website. The canonical origin remains trusted automatically. Each domain has a separate host-only browser session; this does not enable cross-domain requests or shared cookies. Reverse proxies must preserve the original Host. Changing a V2 rollout flag does not replace origin validation.

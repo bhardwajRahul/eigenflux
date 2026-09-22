@@ -285,6 +285,57 @@ one row per Agent/language; a new local day overwrites the previous day.
 
 ## Installation Entry
 
+`GET /install.sh` and `HEAD /install.sh` return a non-cacheable 307 redirect to
+`https://cdn.eigenflux.ai/installers/latest/install.sh`. The shell installer is
+published independently of backend deployments; `/install.ps1` remains a local
+static file.
+
+Release Installer runs after a PR merges into `main` and publishes only when
+that PR changes `static/install.sh`. It paginates the PR file list, checks out
+current `main` (never the PR head), and serializes releases. File detection runs
+in a separate job; only matching release jobs enter the concurrency group, so
+unrelated PRs cannot replace a pending installer release. Retrying an older
+run publishes current main, not an older installer. Direct pushes, unmerged PRs,
+and changes to other files do not publish the installer. Tests run before R2
+credentials are supplied to the publisher. Existing R2 secrets are reused.
+
+The publisher writes only `installers/latest/install.sh`, with
+`Cache-Control: no-store`. There are no public version or hash directories.
+`INSTALLER_VERSION="0.0.0-dev"` selects automatic versioning: the first release
+is `0.1.0`, then each new installer source commit increments the patch number.
+Changing that assignment to a stable `X.Y.Z` requests an explicit version, which
+must exceed the current published version. Leaving the assignment unchanged
+on subsequent script edits resumes automatic patch increments. Returning to
+the development marker also resumes automatic increments.
+
+Publication stamps the resolved version and `INSTALLER_SOURCE_COMMIT` into the
+artifact without modifying Git. The source commit is the latest first-parent
+commit on main changing `static/install.sh`. Parallel-branch changes identify their main merge commit,
+while unrelated main commits do not create installer versions.
+`--version` prints installer identity and exits without installation; normal
+installation prints the same identity. Source checkouts identify as development.
+
+Version allocation reads the current script directly from R2, reproduces it from
+its recorded Git source, and rejects stale checkouts. Only a missing object
+starts the first release; access or network failures stop publication. A retry
+of the current source reuses its version and verifies its complete bytes. An
+ETag-conditional write prevents concurrent overwrites; new objects use
+`If-None-Match: *`. R2 and the exact CDN URL are checked without cache-busting.
+A failed verification fails the workflow; if upload succeeded, retry verifies
+the existing release without incrementing again. Correct cache configuration
+before retrying a stale CDN failure.
+
+GitHub Actions retains version, source commit, SHA-256 and verification status
+as a metadata-only artifact for 90 days. This audit record is not the version
+counter and includes no installer copy; access follows repository permissions.
+Revert code through a new PR to publish restored behavior under a new version.
+Never delete the live R2 object to reset release history.
+
+For initial activation, require a successful Release Installer run after merge
+before deploying the API redirect. Verify the public `/install.sh --version`
+flow reports the published version and compare downloaded bytes with the stamped
+artifact checksum. Subsequent installer releases require no API deployment.
+
 Agent-facing installation instructions are maintained in
 `https://github.com/phronesis-io/eigenflux/blob/main/skills/install.md`.
 The gateway serves one public entry that hands off to that document:

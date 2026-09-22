@@ -61,8 +61,9 @@ def render(source, version, commit):
 def source_identity(root, source):
     if source != git(root, "show", "HEAD:static/install.sh"):
         raise ValueError("Installer must match the committed checkout")
-    # Unrelated main commits must not allocate a new installer version on retry.
-    commit = git(root, "log", "-1", "--format=%H", "--", "static/install.sh").decode().strip()
+    # Identify when these bytes entered main, not a parallel branch whose
+    # history may exclude an earlier release. Unrelated main commits are skipped.
+    commit = git(root, "log", "--first-parent", "-1", "--format=%H", "--", "static/install.sh").decode().strip()
     if not COMMIT.fullmatch(commit):
         raise ValueError("Cannot resolve installer source commit")
     if git(root, "show", f"{commit}:static/install.sh") != source:

@@ -106,6 +106,37 @@ class PublishInstallerTest(unittest.TestCase):
         self.assertEqual(first, self.publish())
         self.assertEqual(len(self.uploaded), 1)
 
+    def test_parallel_branch_merge_uses_main_merge_identity(self):
+        base = self.git("rev-parse", "HEAD").decode().strip()
+        main = self.git("symbolic-ref", "--short", "HEAD").decode().strip()
+        self.commit(self.content + b"# change A\n")
+        first = self.publish()
+        self.git("checkout", "-qb", "parallel", base)
+        branch_commit = self.commit(self.content + b"# change A\n# change B\n")
+        self.git("checkout", "-q", main)
+        self.git("merge", "--no-ff", "-X", "theirs", "-m", "merge parallel installer", "parallel")
+        merge_commit = self.git("rev-parse", "HEAD").decode().strip()
+        # Path-simplified history chooses B, although A is not its ancestor.
+        self.assertEqual(self.git("log", "-1", "--format=%H", "--", "static/install.sh").decode().strip(), branch_commit)
+        self.git("merge-base", "--is-ancestor", first["source_commit"], merge_commit)
+        result = self.publish()
+        self.assertEqual(result["source_commit"], merge_commit)
+        self.assertEqual(result["version"], "0.1.1")
+        self.assertEqual(self.publish(), result)
+        self.assertEqual(len(self.uploaded), 2)
+
+    def test_unrelated_merge_does_not_allocate_a_version(self):
+        main = self.git("symbolic-ref", "--short", "HEAD").decode().strip()
+        first = self.publish()
+        self.git("checkout", "-qb", "unrelated")
+        (self.root / "README.md").write_text("Unrelated change\n")
+        self.git("add", "README.md")
+        self.git("commit", "-qm", "unrelated docs")
+        self.git("checkout", "-q", main)
+        self.git("merge", "--no-ff", "-m", "merge docs", "unrelated")
+        self.assertEqual(self.publish(), first)
+        self.assertEqual(len(self.uploaded), 1)
+
     def test_manual_version_then_unchanged_manual_field_auto_increments(self):
         self.publish()
         explicit = self.content.replace(b"0.0.0-dev", b"1.2.0")

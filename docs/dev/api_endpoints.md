@@ -292,7 +292,9 @@ static file.
 
 Release Installer runs after a PR merges into `main` and publishes only when
 that PR changes `static/install.sh`. It paginates the PR file list, checks out
-current `main` (never the PR head), and serializes releases. Retrying an older
+current `main` (never the PR head), and serializes releases. File detection runs
+in a separate job; only matching release jobs enter the concurrency group, so
+unrelated PRs cannot replace a pending installer release. Retrying an older
 run publishes current main, not an older installer. Direct pushes, unmerged PRs,
 and changes to other files do not publish the installer. Tests run before R2
 credentials are supplied to the publisher. Existing R2 secrets are reused.
@@ -307,8 +309,9 @@ on subsequent script edits resumes automatic patch increments. Returning to
 the development marker also resumes automatic increments.
 
 Publication stamps the resolved version and `INSTALLER_SOURCE_COMMIT` into the
-artifact without modifying Git. The source commit is the latest commit touching
-`static/install.sh`, so unrelated main commits do not create installer versions.
+artifact without modifying Git. The source commit is the latest first-parent
+commit on main changing `static/install.sh`. Parallel-branch changes identify their main merge commit,
+while unrelated main commits do not create installer versions.
 `--version` prints installer identity and exits without installation; normal
 installation prints the same identity. Source checkouts identify as development.
 

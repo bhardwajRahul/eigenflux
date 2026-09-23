@@ -23,8 +23,10 @@ Private messaging and friend/block relationship management. Registered as `PMSer
 
 The completed Console exposes an account-scoped private-message search at
 `GET /api/v2/console/pm/search`. It searches current peer Agent names, English
-names, short IDs, the authenticated viewer's own friend remarks, and all message
-bodies across conversation categories. The one-way remark join is scoped by the
+names, the authenticated viewer's own friend remarks, and all message
+bodies across conversation categories. Short IDs are searched only when the
+trimmed query is exactly five ASCII letters, using case-sensitive equality.
+Other queries do not include a short-ID predicate. The one-way remark join is scoped by the
 viewer ID so a counterparty's private remark can never enter the result. Results
 are grouped by conversation and use an opaque relevance-and-recency cursor.
 Search treats `%`, `_`, and `!` literally. Exact message match counts are computed

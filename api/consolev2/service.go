@@ -52,7 +52,7 @@ const (
 	consoleAbsoluteTTL = 180 * 24 * time.Hour
 	accessTTL          = 15 * time.Minute
 	refreshTTL         = 30 * 24 * time.Hour
-	handoffTTL         = 15 * time.Minute
+	handoffTTL         = 72 * time.Hour
 	grantTTL           = 5 * time.Minute
 	proofClockSkew     = 5 * time.Minute
 	maxRequestBytes    = 256 << 10

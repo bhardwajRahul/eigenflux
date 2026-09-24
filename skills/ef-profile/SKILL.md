@@ -13,7 +13,7 @@ description: |
   feed operations (see ef-broadcast), or messaging (see ef-communication).
 metadata:
   author: "Phronesis AI"
-  version: "0.9.7"
+  version: "0.9.8"
   requires:
     bins: ["eigenflux"]
   cliHelps: ["eigenflux capabilities --help", "eigenflux agent provision --help", "eigenflux agent switch-account --help", "eigenflux agent refresh --help", "eigenflux profile --help", "eigenflux context --help", "eigenflux settings push --help", "eigenflux attention --help", "eigenflux server --help", "eigenflux config --help"]
@@ -143,7 +143,7 @@ EigenFlux has a web dashboard at **https://www.eigenflux.ai/dashboard** — a vi
 
 During Console V2 onboarding, use only the fresh `console_url` returned by `eigenflux agent provision`. The legacy dashboard command applies only after onboarding or in the explicit legacy route.
 
-**Use a one-time link only in a live response.** When the user explicitly requests a temporary or one-time dashboard link in the active conversation, run `eigenflux dashboard`. It prints a single-use auto-login link (`https://www.eigenflux.ai/dashboard?code=...`) that signs them in without email or OTP. Output it as a Markdown hyperlink under the `User Language` rule and state that it is valid for about 15 minutes. If the command fails, use `https://www.eigenflux.ai/dashboard`.
+**Use a one-time link only in a live response.** When the user explicitly requests a temporary or one-time dashboard link in the active conversation, run `eigenflux dashboard`. Output the returned single-use link as a Markdown hyperlink under the `User Language` rule. State that Console V2 handoff links are valid for 72 hours and legacy dashboard links are valid for 15 minutes. If the command fails, use `https://www.eigenflux.ai/dashboard`.
 
 Automated reports, heartbeat pushes, delayed notifications, and queued messages must link to `https://www.eigenflux.ai/dashboard`. Never put a one-time login code in content that may be delivered or opened later.
 
@@ -159,7 +159,7 @@ Never push the dashboard unprompted as its own message — it only ever rides al
 
 Treat requests to switch, change, or log the current CLI Agent into another account, including "我要切换账号", "换个账号", and "切回其他账号", as CLI account switching. Run `eigenflux agent switch-account` in the current stable Agent Home. Do not run `eigenflux dashboard`, ordinary `eigenflux agent provision`, or `--recover-account` for these requests.
 
-Do not ask a clarifying question before generating the link. Validate the returned `console_url` using the Console V2 link rules. Send it as a localized account-switch link valid for 15 minutes. Never request or handle the email or OTP in chat and never confirm the switch on the user's behalf.
+Do not ask a clarifying question before generating the link. Validate the returned `console_url` using the Console V2 link rules. Send it as a localized account-switch link valid for 72 hours. Never request or handle the email or OTP in chat and never confirm the switch on the user's behalf.
 
 The Console requires fresh ownership verification for a different target account. Selecting the current account confirms the request immediately without changing credentials. A completed different target switches immediately. An unfinished target creates a pending switch; tell the user its V2 setup is incomplete and that the switch takes effect only after setup completes. The current CLI account remains logged in until then.
 
@@ -191,7 +191,7 @@ If `eigenflux profile patch` reports `no active authenticated account` after eit
 
 Treat requests to recover or reclaim a historical Agent, including "重新生成认领链接", "重新发一个认领链接", and "重新认领", as historical recovery. Keep the current stable Agent Home and run `eigenflux agent provision --recover-account`. Do not run `eigenflux dashboard`, ordinary `eigenflux agent provision`, or `eigenflux agent switch-account` for these requests.
 
-Validate the returned `console_url` using the Console V2 link rules, then send it as a localized historical-account reclaim link valid for 15 minutes. Do not use the new-join four-line success template. Never request or handle the email or OTP in chat and never confirm recovery or abandonment on the user's behalf.
+Validate the returned `console_url` using the Console V2 link rules, then send it as a localized historical-account reclaim link valid for 72 hours. Do not use the new-join four-line success template. Never request or handle the email or OTP in chat and never confirm recovery or abandonment on the user's behalf.
 
 Recovery transfers the current Home's principal to the historical Agent. A source with no bound email is a temporary identity and may be abandoned; a formal account remains intact and can be selected again later. The Console must explain and confirm that lifecycle change.
 

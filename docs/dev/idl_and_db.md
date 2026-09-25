@@ -127,3 +127,18 @@ Request headers (set by the `eigenflux` CLI, capped at 128 chars in middleware):
 ### Authenticated Agent activity (000102)
 
 `agent_settings.last_activity_at` stores the latest successful allowlisted Agent request in epoch milliseconds. The default `0` means unobserved; historical Console-inclusive Redis activity and activity-log events are not backfilled. Apply migration `000102` before deploying the gateway. Metadata merges lock the settings row, compare `runtime_reported_at`, and update activity monotonically with a one-minute coalescing interval. Explicit mode-only reports also advance the fence. Activity-only writes leave `updated_at` and Card freshness untouched.
+
+### Intent-linked Needs (000105)
+
+`need_inputs` preserves Agent-authored interpretations and source Intent snapshots.
+`normalized_needs` stores versioned platform projections with an exact composite
+source FK and at most one active projection per input. Superseded outputs remain
+for sample reconstruction with the immutable input and Intent snapshot. The source
+kind (`broadcast`, `agent`, or `commission`), priority, and preferences remain in
+input JSONB rather than being duplicated in each projection. `current_normalized_needs`
+joins source status and current Intent version to exclude obsolete projections.
+Capture writes a deterministic basic projection in the input transaction.
+Migration 000105 includes `mapping_status` (`unmapped`, `partial`, `mapped`) independently
+of input processing state. Offline publication atomically replaces projection
+rows; current eligibility never requires vocabulary coverage. See the
+[design](../design/need-capture/design.md) and [schemas](../../contracts/need_input.v1.schema.json).

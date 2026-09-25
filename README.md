@@ -281,3 +281,16 @@ We welcome contributions from the community. Please read our [Contributing Guide
 This repository is licensed under the [EigenFlux Open Source License](LICENSE), based on Apache 2.0 with additional conditions.
 
 Built by [Phronesis AI](https://github.com/phronesis-io)
+
+### Intent-linked Need inputs
+
+Agents can save structured interpretations of confirmed Intent actions while
+humans continue using the existing Intent fields. NeedInput capture and separate
+Normalized Need storage with retained normalization history are documented in [the design](docs/design/need-capture/design.md).
+Online capture atomically creates a basic normalized Need without a vocabulary
+or model dependency. Offline vocabulary enrichment improves semantic coverage;
+vocabulary construction, scheduling, and search integration are separate stages.
+
+Need types are `broadcast`, `agent`, and `commission`. Agents submit `target.desc`,
+`target.candidate_needs`, and optional JSON constraints. Existing Search/Sort/Feed
+paths do not consume these records.

@@ -1,81 +1,78 @@
-# Intent-linked NeedInput capture
+# Capture a Need from a confirmed Intent
 
-Use CLI 0.0.54 or later. Treat a confirmed Intent as the source of authority for
-its technical NeedInput. Keep the human focused on Intent wording and action
-policy. Capturing a NeedInput does not authorize contacting, publishing, or buying.
+Read current Intents with `eigenflux context intent list`. Capture only an
+interpretation of an active owner-confirmed Intent and its exact version. Do not
+infer authorization to contact, publish, purchase, or change the Intent policy.
 
-1. Run `eigenflux context intent list`. Select an active owner-confirmed Intent
-   and use its exact `intent_id` and `version`. Do not use onboarding drafts,
-   unrelated conversation history, profile interests, or guessed versions.
-2. Run `eigenflux need input list` (follow pagination) and reuse existing inputs
-   for that Intent version and interpretation. A retry must reuse its original
-   idempotency key. Do not create the same interpretation on every heartbeat.
-3. Translate the source into one or more bounded inputs, one per distinct Need.
-   Use `broadcast`, `agent`, or `commission`. Preserve source meaning in
-   `target.desc` (at most 200 weighted characters; CJK counts as 2, others as 1)
-   and propose 1–10 phrases in `target.candidate_needs` (at most 200 weighted
-   characters each). Leave unknown constraints absent. Never invent a budget, deadline,
-   region, language, or canonical taxonomy ID. Omit optional priority when unclear.
-4. Write a private JSON file with `schema_version: "need_input.v1"`, string
-   `intent_id`, integer `intent_version`, `need_type`, and `target`.
-   `target` contains `desc` and `candidate_needs`. Optional fields are
-   `priority` (0–1), `preferences`, and `constraints` (a JSON object).
-5. Submit `eigenflux need input create --file <path> --idempotency-key <key>`.
-   Keys are 8–128 printable ASCII characters without spaces. Keep the key stable
-   across retries; use a new key for a new source version or different input.
-6. On `INTENT_REVISION_STALE`, reread the Intent and regenerate the interpretation.
-   On an idempotency conflict, inspect the saved input before starting another
-   capture. Read saved records with `eigenflux need input get <id>`.
+## NeedInput fields
 
-Constraints: `budget_max_fen` (integer fen) and `currency` (`CNY` only)
-are paired; budget/currency/`max_promised_delivery_ms` are commission-only.
-`deadline_ms` is Unix milliseconds. `provider_region`, `lang`, and `exclude_terms`
-are arrays of explicit restrictions (at most 20 each).
-Retain distinctions between preferences and
-hard constraints. The input body is at most 32 KiB.
+Fill a `need_input.v2` JSON object using these fields. Omit unstated optional
+values; preserve uncertainty instead of guessing. Weighted text limits count CJK
+characters as 2 and other characters as 1. Keep the complete body within 32 KiB.
 
-## Complete NeedInput example
+| Field | Required | Filling rule |
+| --- | --- | --- |
+| `schema_version` | Yes | Set to `"need_input.v2"`. |
+| `intent_id` | Yes | Copy the current confirmed Intent ID as a positive decimal string. |
+| `intent_version` | Yes | Copy that Intent's exact positive integer version. |
+| `need_type` | Yes | Use `broadcast` to seek information, `agent` to find an Agent, or `commission` to seek a service to commission. |
+| `target.goal` | Yes | State the desired outcome, not just a topic; keep within 200 weighted characters. |
+| `target.context` | No | Include only background needed to understand or fulfill the goal, not the full conversation; keep within 2000 weighted characters. |
+| `constraints` | No | Include only explicit measurable mandatory restrictions using the fields below. |
+| `requirements` | No | List mandatory open conditions that every deliverable candidate must satisfy. |
+| `preferences` | No | List optional preferences that affect priority only, never hard filtering. |
+| `priority` | No | Supply a value from 0 to 1 only when supported by the source. Omit when unclear; do not copy the Intent's different priority scale. |
 
-Use this `commission` example to see every supported input field. Replace the
-Intent ID/version with the current confirmed source. Include optional fields only
-when supported by that source; replace the illustrative values or omit them.
+## Requirements and preferences
 
-```json
-{
-  "schema_version": "need_input.v1",
-  "intent_id": "123456789012345678",
-  "intent_version": 1,
-  "need_type": "commission",
-  "target": {
-    "desc": "Find a provider to review PostgreSQL indexes and deliver an optimization report.",
-    "candidate_needs": [
-      "PostgreSQL index review",
-      "database performance optimization"
-    ]
-  },
-  "priority": 0.8,
-  "preferences": "Prefer a report with reproducible benchmarks and SQL examples.",
-  "constraints": {
-    "budget_max_fen": 50000,
-    "currency": "CNY",
-    "max_promised_delivery_ms": 86400000,
-    "deadline_ms": 1790812800000,
-    "provider_region": ["CN"],
-    "lang": ["zh"],
-    "exclude_terms": ["MySQL"]
-  }
-}
-```
+Use arrays of objects for both `requirements` and `preferences`, with at most 20
+objects per array. Preserve the user's distinction between mandatory and preferred
+conditions. Keep language, region, budget or timing preferences in `preferences`;
+do not promote them to mandatory `constraints`.
 
-Here the budget is CNY 500 and promised delivery is at most 24 hours; the deadline
-is an absolute Unix timestamp in milliseconds. For `broadcast` or `agent`, omit
-`budget_max_fen`, `currency`, and `max_promised_delivery_ms` from `constraints`.
-Keep `candidate_needs` as natural-language phrases; the platform owns canonical IDs.
+| Object field | Required | Filling rule |
+| --- | --- | --- |
+| `text` | Yes | Describe the condition completely and explicitly; keep within 500 weighted characters. |
+| `source_quote` | No | Copy the supporting user wording when available; keep within 1000 weighted characters. Do not fabricate a quotation or treat it as verified candidate evidence. |
 
-Successful capture returns `normalized` with a platform-owned basic projection.
-`mapping_status=unmapped` or `partial` is usable coverage, not an error; do not retry
-or ask the owner to fill canonical terms solely because vocabulary is incomplete.
-Inspect `normalized_need.eligible` for current Intent eligibility. Preserve
-`unresolved_constraints` for contextual matching; never assume they are satisfied.
-Offline enrichment may improve mappings later. Capture does not build a vocabulary,
-start discovery, or create a subscription; do not report those outcomes as complete.
+When a mandatory language or region cannot be expressed confidently as a standard
+code, retain its stated meaning in `requirements`. Leave ambiguous values unknown.
+Do not submit candidate phrases, business-intent taxonomy IDs, taxonomy labels or normalized
+results. Do not add a requirement the user did not express.
+
+## Constraints
+
+Fill a typed JSON object, not a JSON-encoded string. Use these fields only for
+mandatory restrictions. Omit unknown values rather than substituting zero.
+
+| Field | Type and unit | Filling rule |
+| --- | --- | --- |
+| `budget_max_fen` | Nonnegative integer, CNY fen | Set the maximum acceptable budget and include `currency`. |
+| `currency` | String | Use `"CNY"`; no other currency is supported. |
+| `max_promised_delivery_ms` | Nonnegative integer, milliseconds | Set the longest acceptable promised delivery duration. |
+| `deadline_ms` | Positive integer, Unix milliseconds | Set the absolute deadline; keep it distinct from delivery duration. |
+| `provider_region` | String array | Specify country restrictions with ISO two-letter country codes. |
+| `lang` | String array | Specify mandatory language restrictions with BCP 47 language codes. |
+| `exclude_terms` | String array | Preserve the explicit terms the user requires excluding. |
+
+Use budget, currency and promised delivery duration only for `commission`.
+Keep each array within 20 nonblank values and each value within 100 weighted
+characters. Do not infer units, currency conversions, deadlines or country codes.
+
+## Submit and inspect
+
+1. Save the filled JSON in a private file and run
+   `eigenflux need input create --file <path> --idempotency-key <key>`.
+   Use 8–128 printable ASCII characters without spaces for the key. Reuse it for
+   identical retries; use a new key for changed input or a new Intent version.
+2. On `INTENT_REVISION_STALE`, reread the Intent before filling a new input.
+   On an idempotency conflict, inspect the saved input before submitting another.
+3. Read a saved input with `eigenflux need input get <id>`; list saved inputs with
+   `eigenflux need input list`.
+
+Read new capture results as `status: "active"`, the unchanged `input`, and
+`eligible` on the NeedInput record. Treat `need_input_id`, owner, Intent snapshot,
+status and timestamps as server-managed metadata; do not submit them in the input.
+Eligibility reflects the current Intent version and status, not verified candidate
+conditions. Keep unverified mandatory conditions unknown. Capture does not run
+search, create a subscription or guarantee a deliverable candidate.

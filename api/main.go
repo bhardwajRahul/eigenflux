@@ -52,12 +52,12 @@ import (
 	"eigenflux_server/kitex_gen/eigenflux/profile/profileservice"
 	"eigenflux_server/kitex_gen/eigenflux/sort/sortservice"
 	"eigenflux_server/pipeline/embedding"
-	"eigenflux_server/pkg/commissionindex"
 	"eigenflux_server/pkg/commissionsource"
 	"eigenflux_server/pkg/config"
 	"eigenflux_server/pkg/db"
 	"eigenflux_server/pkg/embeddingmeta"
 	"eigenflux_server/pkg/es"
+	"eigenflux_server/pkg/featureindex"
 	"eigenflux_server/pkg/idgen"
 	"eigenflux_server/pkg/logger"
 	"eigenflux_server/pkg/metrics"
@@ -206,10 +206,18 @@ func main() {
 		}
 		defer func() { _ = commissionDiscoveryIDGen.Close(context.Background()) }()
 		commissionDiscoveryService = commissiondiscovery.New(sortClient, commissionDiscoveryIDGen, mq.Publish, commissionAccess)
+		if cfg.EnableNeedSearch {
+			commissionDiscoveryService.SetDiscoveryClient(feedClient)
+		}
 	}
 
 	var integrationServer *server.Hertz
 	if integrationMode.Enabled {
+		stopFeatureConfig, err := featureindex.StartConfig(context.Background(), cfg.FeatureIndexConfigDir, cfg.FeatureIndexReloadInterval)
+		if err != nil {
+			log.Fatalf("feature configuration: %v", err)
+		}
+		defer stopFeatureConfig()
 		if err := es.InitClient(); err != nil {
 			log.Fatalf("initialize Elasticsearch for Commission diagnostics: %v", err)
 		}
@@ -226,7 +234,7 @@ func main() {
 			log.Fatal("initialize Commission projection diagnostics")
 		}
 		source := commissionsource.Adapter{Commission: commissionSourceClient, Order: orderSourceClient}
-		store := commissionindex.ESStore{Index: cfg.CommissionIndexName, Alias: cfg.CommissionIndexAlias, Dimensions: cfg.EmbeddingDimensions}
+		store := featureindex.CommissionESStore{Redis: mq.RDB, Index: cfg.CommissionIndexName, Alias: cfg.CommissionIndexAlias, Dimensions: cfg.EmbeddingDimensions}
 		embeddingClient := embedding.NewClient(cfg.EmbeddingProvider, cfg.EmbeddingApiKey, cfg.EmbeddingBaseURL, cfg.EmbeddingModel, cfg.EmbeddingDimensions)
 		diagnostics, err := commissionintegration.NewService(projection, source, store, commissionintegration.NewEmbeddingProbe(embeddingmeta.NormalizeProvider(cfg.EmbeddingProvider), cfg.EmbeddingDimensions, embeddingClient))
 		if err != nil {
@@ -339,6 +347,9 @@ func main() {
 		h.POST("/api/v1/console/agent-upgrade-challenges", middleware.AuthMiddleware(), consoleV2Service.LegacyAgentUpgradeChallengeHandler())
 		consoleV2Service.Register(h)
 		consoleV2Service.RegisterCommissionDiscovery(h, commissionDiscoveryService)
+		if cfg.EnableNeedSearch {
+			consoleV2Service.RegisterDiscovery(h, commissionAccess)
+		}
 		registerConsoleV2BusinessBFF(h, consoleV2Service, cfg)
 		log.Print("Console V2 routes registered")
 	}

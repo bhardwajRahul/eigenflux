@@ -13,17 +13,20 @@ import (
 )
 
 func readNeedFile(path string) (json.RawMessage, error) {
+	return readNeedJSONFile(path, 32<<10)
+}
+func readNeedJSONFile(path string, maxBytes int64) (json.RawMessage, error) {
 	f, err := os.Open(path)
 	if err != nil {
 		return nil, err
 	}
 	defer f.Close()
-	raw, err := io.ReadAll(io.LimitReader(f, (32<<10)+1))
+	raw, err := io.ReadAll(io.LimitReader(f, maxBytes+1))
 	if err != nil {
 		return nil, err
 	}
-	if len(raw) == 0 || len(raw) > 32<<10 || !json.Valid(raw) {
-		return nil, fmt.Errorf("Need file must contain one JSON object of at most 32 KiB")
+	if len(raw) == 0 || int64(len(raw)) > maxBytes || !json.Valid(raw) {
+		return nil, fmt.Errorf("Need file must contain one JSON object of at most %d bytes", maxBytes)
 	}
 	var object map[string]json.RawMessage
 	if json.Unmarshal(raw, &object) != nil || object == nil {
@@ -41,7 +44,7 @@ func validateNeedID(raw string) error {
 func newNeedCommand() *cobra.Command {
 	root := &cobra.Command{Use: "need", Short: "Prepare structured Needs for confirmed intents"}
 	group := &cobra.Command{Use: "input", Short: "Save and inspect immutable NeedInputs"}
-	root.AddCommand(group)
+	root.AddCommand(group, newNeedCaptureCommand())
 	create := &cobra.Command{Use: "create --file need.json --idempotency-key KEY", Short: "Save an Agent interpretation of a confirmed intent version", Args: cobra.NoArgs, RunE: func(c *cobra.Command, _ []string) error {
 		file, _ := c.Flags().GetString("file")
 		key, _ := c.Flags().GetString("idempotency-key")
@@ -104,7 +107,7 @@ Constraint arrays allow at most 20 nonblank values of 100 weighted characters ea
 CJK characters count as 2, other characters as 1. The JSON body limit is 32 KiB.
 Omit unstated or unknown values; do not guess or replace them with zero. Keep
 optional language, region, price and timing preferences in preferences.
-Do not submit candidate phrases, canonical taxonomy IDs or normalized results.
+Submit only the documented fields; do not submit derived results.
 
 The CLI submits the original JSON; the server validates and stores its snapshot.
 New records have status active and eligible on the NeedInput record. Eligibility

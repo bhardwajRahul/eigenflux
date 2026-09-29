@@ -10,11 +10,14 @@ import (
 	"github.com/cloudwego/hertz/pkg/app"
 	"github.com/cloudwego/hertz/pkg/app/server"
 
+	"eigenflux_server/pkg/cache"
 	"eigenflux_server/pkg/logger"
 	"eigenflux_server/pkg/need"
 )
 
 func (s *Service) registerNeeds(h *server.Hertz) {
+	h.GET("/api/v2/need-capture/pending", s.agentAuth("context:read"), s.requireCompleted, s.pendingNeedCaptures)
+	h.POST("/api/v2/need-capture/complete", s.agentAuth("context:write"), s.requireCompleted, s.completeNeedCapture)
 	h.POST("/api/v2/need-inputs", s.agentAuth("context:write"), s.requireCompleted, s.createNeedInput)
 	h.GET("/api/v2/need-inputs", s.agentAuth("context:read"), s.requireCompleted, s.listNeedInputs)
 	h.GET("/api/v2/need-inputs/:need_input_id", s.agentAuth("context:read"), s.requireCompleted, s.getNeedInput)
@@ -64,6 +67,7 @@ func (s *Service) createNeedInput(ctx context.Context, c *app.RequestContext) {
 		needFailure(ctx, c, err)
 		return
 	}
+	cache.InvalidateDiscovery(ctx, s.redisClient, owner)
 	status := http.StatusCreated
 	if replayed {
 		status = http.StatusOK
@@ -109,4 +113,42 @@ func (s *Service) listNeedInputs(ctx context.Context, c *app.RequestContext) {
 		return
 	}
 	needReply(c, 200, page)
+}
+
+func (s *Service) pendingNeedCaptures(ctx context.Context, c *app.RequestContext) {
+	owner, _ := agentID(c)
+	limit := 2
+	if raw := c.Query("limit"); raw != "" {
+		value, err := strconv.Atoi(raw)
+		if err != nil {
+			needFailure(ctx, c, &need.FieldError{Path: "limit", Reason: "invalid_limit"})
+			return
+		}
+		limit = value
+	}
+	out, err := s.needStore().PendingCaptures(ctx, owner, limit)
+	if err != nil {
+		needFailure(ctx, c, err)
+		return
+	}
+	needReply(c, 200, out)
+}
+func (s *Service) completeNeedCapture(ctx context.Context, c *app.RequestContext) {
+	owner, _ := agentID(c)
+	raw, err := c.Body()
+	if err != nil {
+		needFailure(ctx, c, &need.FieldError{Path: "review", Reason: "invalid_body"})
+		return
+	}
+	if len(raw) > need.MaxReviewBytes {
+		fail(c, 413, "NEED_REVIEW_TOO_LARGE", "capture review exceeds 100 KiB", nil)
+		return
+	}
+	replayed, err := s.needStore().CompleteCapture(ctx, owner, raw, time.Now().UnixMilli())
+	if err != nil {
+		needFailure(ctx, c, err)
+		return
+	}
+	cache.InvalidateDiscovery(ctx, s.redisClient, owner)
+	needReply(c, 200, map[string]any{"completed": true, "replayed": replayed})
 }

@@ -40,6 +40,11 @@ func loadConsoleV2RegistrationLimits() RegLimit {
 }
 
 type Config struct {
+	EnableNeedSearch           bool
+	DiscoveryRulesPath         string
+	DiscoveryEmbeddingRevision string
+	AgentDiscoveryIndex        string
+
 	EtcdAddr                    string
 	PgDSN                       string
 	RedisAddr                   string
@@ -213,6 +218,10 @@ type Config struct {
 	BlockedAgentEmails    []string // agent emails denied at the API auth gate (spam/abuse); blocks every authenticated route including broadcast publish
 	RecallRedisNamespace  string   // Redis key namespace for recall indices (default: "rec")
 
+	// External feature view YAML, reloaded by each feature reader/writer process.
+	FeatureIndexConfigDir      string
+	FeatureIndexReloadInterval string
+
 	// LR ranker (sort). A daily-trained logistic-regression model replaces the
 	// formula rank when enabled and a valid bundle is loaded; otherwise sort
 	// falls back to the baseline formula ranker. The bundle is delivered to a
@@ -290,6 +299,10 @@ func Load() *Config {
 		ResendFromEmail:             getEnv("RESEND_FROM_EMAIL", "noreply@example.com"),
 		EnableEmailVerification:     getEnvBool("ENABLE_EMAIL_VERIFICATION", false),
 		EnableConsoleV2:             getEnvBool("ENABLE_CONSOLE_V2", false),
+		EnableNeedSearch:            getEnvBool("ENABLE_NEED_SEARCH", false),
+		DiscoveryRulesPath:          getEnv("DISCOVERY_RULES_PATH", "configs/discovery/rules.json"),
+		DiscoveryEmbeddingRevision:  getEnv("DISCOVERY_EMBEDDING_REVISION", ""),
+		AgentDiscoveryIndex:         getEnv("AGENT_DISCOVERY_INDEX", "agent_discovery_v1"),
 		EnableFeedV2:                getEnvBool("ENABLE_FEED_V2", false),
 		EnableControlChannelV2:      getEnvBool("ENABLE_CONTROL_CHANNEL_V2", false),
 		EnableAgentAttentionV1:      getEnvBool("ENABLE_AGENT_ATTENTION_V1", false),
@@ -415,6 +428,8 @@ func Load() *Config {
 		LRRankerEnabled:              getEnvBool("LR_RANKER_ENABLED", false),
 		LRRankerModelPath:            getEnv("LR_RANKER_MODEL_PATH", "/data/models/eigenflux/lr-ranker/current/model.json"),
 		LRRankerReloadInterval:       getEnv("LR_RANKER_RELOAD_INTERVAL", "60s"),
+		FeatureIndexConfigDir:        getEnv("FEATURE_INDEX_CONFIG_DIR", "configs/featureindex"),
+		FeatureIndexReloadInterval:   getEnv("FEATURE_INDEX_RELOAD_INTERVAL", "5s"),
 		RecallRedisNamespace:         getEnv("REC_REDIS_NAMESPACE", "rec"),
 		FreshnessAlertOffset:         getEnv("FRESHNESS_ALERT_OFFSET", "2h"),
 		FreshnessAlertScale:          getEnv("FRESHNESS_ALERT_SCALE", "12h"),
@@ -481,7 +496,7 @@ var (
 )
 
 func (c *Config) ValidateCommissionDiscoveryConfiguration() error {
-	if c == nil || c.CommissionDiscoveryEnabled && !c.EnableCommissionIndex {
+	if c == nil || (c.CommissionDiscoveryEnabled || c.EnableNeedSearch) && !c.EnableCommissionIndex || c.EnableNeedSearch && (!c.CommissionDiscoveryEnabled || !c.EnableReplayLog) {
 		return ErrInvalidCommissionDiscoveryConfiguration
 	}
 	return nil

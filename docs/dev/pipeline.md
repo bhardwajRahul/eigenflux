@@ -1,5 +1,7 @@
 # Pipeline & Async Processing
 
+The optional three-kind, rule-only search/recommendation cutover is documented in [Search and Recommendation MVP](discovery.md). It is disabled by default; the legacy behavior below applies when `ENABLE_NEED_SEARCH=false`.
+
 ## Async Messaging
 
 When `ENABLE_COMMISSION_ORDER_NOTIFICATIONS=true`, `CommissionOrderNotificationConsumer` reads `COMMISSION_NOTIFICATION_STREAM` with its dedicated retry-aware consumer group and DLQ. Durable inbox insertion precedes the online wake-up; duplicate stream delivery does not create or signal a second logical notification. Invalid facts are dead-lettered, while database failures remain retryable.
@@ -17,14 +19,20 @@ When `ENABLE_COMMISSION_INDEX=true`, `CommissionIndexConsumer` reads
 as notifications and pulls authoritative catalogue snapshots from
 `CommissionService` plus statistics from `OrderService`; it never reads the
 Commission database. Invalid version-1 envelopes are copied to
-`stream:commission:index:dlq`. Source RPC, embedding, and Elasticsearch errors
-remain pending for retry. Documents retain independent catalogue and statistics
-versions, and offline entries are retained as `active=false` tombstones so a
+`stream:commission:index:dlq`. Source RPC, embedding, Elasticsearch, and Redis
+errors remain pending for retry. Catalogue events write a versioned
+Redis forward projection and an ES search-only document. Statistics events read
+only OrderService and update only their independently versioned Redis component,
+without embedding or ES writes. See [forward index contracts](discovery.md#search-index-and-forward-index).
+The projections retain independent catalogue and statistics versions, and
+offline entries are retained as `active=false` tombstones so a
 delayed older event cannot reactivate them.
 
 With `ENABLE_COMMISSION_INDEX=true`, run
 `go run ./scripts/commission_backfill` to page active source snapshots and
-idempotently populate the same index while the consumer remains online. The
+idempotently populate both Redis forward components and ES while the consumer
+remains online. Concrete ES generations scope the forward keys; the alias is
+promoted only after the staged backfill succeeds. The
 command fails before connecting to infrastructure when the switch is disabled.
 
 For staged rollout, enable `ENABLE_COMMISSION_INDEX` on Sort and Pipeline first,
@@ -149,7 +157,9 @@ the task prompt; an empty preference keeps the guess-from-content fallback.
   `RESCUE_WINDOW_DAYS` (3) from `replay_logs` (`jsonb_exists_any` overlap); if
   below `RESCUE_THRESHOLD` (30), DMs a personalized topic suggestion drawn from
   network trending, gated by a `RESCUE_COOLDOWN_DAYS` (3) cooldown and
-  `OFFICIAL_LLM_MAX_PER_RUN`.
+  `OFFICIAL_LLM_MAX_PER_RUN`. The task does not start when
+  `ENABLE_NEED_SEARCH=true`, because legacy domain samples cannot measure
+  deliveries from the new pipeline.
 
 ## Official Account Reactive Replies (pipeline/consumer/official_*.go)
 
@@ -263,3 +273,33 @@ System supports two embedding providers:
 ## LLM
 
 LLM calls use OpenAI official Go SDK (`github.com/openai/openai-go/v3`) via the Responses API (`client.Responses.New`). Max output tokens is configurable via `LLM_MAX_TOKENS` (default: 4096). Default reasoning effort is configurable via `LLM_REASONING_EFFORT` (default: `low`; supported values: `none`, `minimal`, `low`, `medium`, `high`). Individual prompts can override reasoning effort via `WithReasoning()` — e.g. `extract_keywords` uses `none` since it only needs simple structured extraction.
+
+### Need embedding precomputation
+
+With `ENABLE_NEED_SEARCH=true`, Pipeline starts two database-backed
+`NeedEmbeddingWorker` loops in addition to stream consumers. Current eligible
+NeedInputs are the durable source of work, so capture requires no external queue
+write and historical inputs are covered automatically. Migration 000110 stores
+per-input/per-generation leases, retry times and readiness. The worker normalizes
+`target.goal + target.context` through the shared query processor, generates or
+reuses a versioned Redis vector, and retries failures with bounded backoff.
+
+Sort reads these vectors without waiting for a model on stored-Need cache misses.
+The Pipeline and Sort embedding settings, including `DISCOVERY_EMBEDDING_REVISION`,
+must match. See [cache keys, failure behavior and deployment](discovery.md#asynchronous-need-embeddings).
+
+## Discovery feature materialization
+
+Pipeline runs the registered commission source loader whenever
+`ENABLE_COMMISSION_INDEX=true`, including legacy routing and rollback.
+`ENABLE_NEED_SEARCH=true` additionally enables broadcast and Agent loaders. These loaders
+refresh Redis from DB/source RPCs without embedding or ES access. Completed
+broadcast processing attempts an incremental refresh; Agent and commission
+retain their existing event writers. See [Online feature index](feature_index.md)
+for field registration, fencing, checkpoints and repair cadence.
+
+Feature materializers use YAML-paced, version-protected batch writes over active
+source pages, with a shared checkpoint and cycle pause. A separate bounded audit
+adopts physical retention on legacy keys and counts physical keys by type.
+Completed census snapshots, source scan progress and failure counters are exported
+through Pipeline metrics; see [feature monitoring](feature_index.md#monitoring).

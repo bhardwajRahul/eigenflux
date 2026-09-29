@@ -8,7 +8,7 @@ Tests live beside the packages they exercise and in the service integration suit
 |-----------|-------------|-------------|
 | `tests/testutil/` | Shared test utilities (DB, Redis, HTTP, Auth, Agent helpers) | Not directly run |
 | `tests/e2e/` | End-to-end full flow tests (register -> publish -> Feed -> dedup) | `go test -v ./tests/e2e/` |
-| `tests/needs/` | Need capture HTTP/CLI lifecycle, input boundaries, PostgreSQL integrity, direct v2 storage, and legacy history | `./tests/run.sh --skip-start needs` |
+| `tests/needs/` | Need capture HTTP/CLI lifecycle, input boundaries, PostgreSQL integrity, direct v2 storage, legacy history, and versioned capture maintenance | `./tests/run.sh --skip-start needs` |
 | `tests/auth/` | Authentication flow tests (OTP, session, Profile completion) | `go test -v ./tests/auth/` |
 | `tests/console/` | Console API tests (agent/item list queries) | `go test -v ./tests/console/` |
 | `tests/cache/` | Cache-specific tests (unit + e2e + perf) | `go test -v ./tests/cache/` |
@@ -126,3 +126,27 @@ CLI integration subprocesses isolate `HOME`, `EIGENFLUX_HOME`, and
 `EIGENFLUX_SKILLS_DIR` in their temporary fixture directory. Automatic skill
 refreshes use an unavailable loopback CDN endpoint so these tests neither install
 public releases nor update the developer's managed skills.
+
+## Search and recommendation discovery
+
+The opt-in [process E2E suite](../../tests/discoverye2e/README.md) starts actual
+API/Feed/Sort/Item binaries and verifies the enabled online pipeline through HTTP,
+real stores and replay consumption. Build first, then run
+`DISCOVERY_E2E=1 ./tests/run.sh --skip-start discoverye2e -count=1` against isolated,
+migrated infrastructure with no other RPC services registered in its etcd.
+It owns service startup; do not run `start_local.sh` for this suite. Embedding and
+external commission/order RPCs use deterministic fixtures.
+
+Run `go test ./rpc/sort/... ./rpc/feed/... ./pkg/replaylog ./api/consolev2 ./pipeline/consumer` for contract, ownership, page, idempotency and replay checks.
+
+Real-store tests require `DISCOVERY_TEST_DSN` (an isolated migrated PostgreSQL database), `DISCOVERY_TEST_ES` (isolated Elasticsearch URL), and `DISCOVERY_TEST_REDIS` (isolated Redis address). Run `go test ./rpc/sort/discovery ./pipeline/consumer -run 'TestPostgres|TestDiscoveryReplayPostgres' -count=1`. These tests use temporary schemas/indices and fixture rows; do not point them at production or run alongside integration suites that reset the same database. Agent projection and ranking hydration use real stores; Commission catalogue/statistics snapshots are fixtures written through the projection store. Validating remote Commission event production remains a cutover check.
+
+CLI checks run in the independent `cli` module: `go test ./cmd ./internal/client ./internal/cache ./internal/feedevent`. Signed release builds still use the existing signing workflow; a local compilation uses `go build -o ../build/eigenflux-cli .`.
+
+For asynchronous Need vectors, migrate the isolated database through 000110 and
+set `DISCOVERY_TEST_REDIS` to its loopback Redis address. Run
+`go test ./tests/needs -run TestNeedEmbedding -count=1` with `PG_DSN` set. Tests
+exercise the real embedding HTTP client, worker, generation-specific job leases
+and Redis cache. `tests/discoverye2e` additionally verifies cold/warm vector use
+through real API/Feed/Sort processes. Unit tests under
+`rpc/sort/discovery/needembedding` verify cache identity and invalid vectors.

@@ -1,5 +1,7 @@
 # API Endpoints
 
+The optional three-kind, rule-only search/recommendation cutover is documented in [Search and Recommendation MVP](discovery.md). It is disabled by default; the legacy behavior below applies when `ENABLE_NEED_SEARCH=false`.
+
 ## Console payout KYC
 
 The commission-gated Console BFF exposes `GET /api/v2/console/bff/payout-method/kyc`,
@@ -56,7 +58,11 @@ for example `/api/v1/commissions/search?commission_id=9223372036854775807`.
 It returns the existing candidate response with zero or one active Commission,
 retains supplied price/delivery filters, and does not generate a query
 embedding. Supplying both `query` and `commission_id`, or neither, returns HTTP
-400.
+400. With `ENABLE_NEED_SEARCH=true`, the compatibility search facade delegates
+both text and explicit-ID requests to Feed discovery. Agents should use
+`eigenflux search --commission-id ID` (CLI 0.0.58+) or
+`POST /api/v2/discovery/search` with `{"commission_id":"ID"}` for new integrations.
+The existing GET routes retain their parameters and candidate response format.
 
 The routes are absent unless `ENABLE_COMMISSION_DISCOVERY_API=true`; that
 setting requires `ENABLE_COMMISSION_INDEX=true`. When
@@ -624,6 +630,36 @@ return top-level `eligible` on each NeedInput record; new records have `status=a
 No `normalized_need` is returned or created. V1 clients and historical retries remain
 supported; historical normalized rows remain in storage for existing archive readers.
 Intent edits invalidate eligibility without rewriting the input. Eligibility does not
-assert that candidate conditions are satisfied. Main-branch Search/Sort/Feed do not
-consume these records. See [the design](../design/need-capture/design.md) for the full
+assert that candidate conditions are satisfied. Discovery Search/Sort/Feed consume the current eligible inputs. See [the design](../design/need-capture/design.md) for the full
 contract, compatibility, pagination and errors.
+
+## Intent capture maintenance
+
+Completed Agents use `GET /api/v2/need-capture/pending?limit=2` with `context:read`.
+`data.intents` contains current unreviewed active Intent versions, source wording,
+policy, priority and `existing_inputs` (Need IDs/types). `has_more` indicates
+remaining work; the limit is 1–10. Listing is read-only and does not lease work.
+
+`POST /api/v2/need-capture/complete` requires `context:write` and a JSON object:
+`intent_id` (decimal string), `intent_version`, `outcome` (`captured` or `no_need`),
+`inputs` (array), and optional `reason`. The body limit is 100 KiB; each of at most
+three inputs uses the existing 32 KiB v2 contract, matches the source version,
+and represents a distinct missing kind. Existing kinds must be reused.
+`captured` requires at least one existing or submitted input; `no_need` requires
+no existing/submitted inputs and a nonblank reason of at most 2000 UTF-8 bytes.
+
+The response is `data: {completed: true, replayed: false}`; an identical completed
+request returns `replayed: true`. Completion and input writes share one transaction.
+Current source status/version is checked even on replay. Stale/foreign Intent
+links return `INTENT_REVISION_STALE` (409); different content for an already
+completed version returns `IDEMPOTENCY_CONFLICT` (409). Concurrent direct capture
+can return field reason `kind_already_captured_refresh_pending` (400); reread
+pending work before rebuilding a draft. Invalid fields return `INVALID_NEED_INPUT`
+(400); oversized review bodies return `NEED_REVIEW_TOO_LARGE` (413). Storage errors
+stay errors and do not mark work complete. Responses are private and no-store.
+
+CLI 0.0.56 provides `need capture pending --limit 2` and
+`need capture complete --file review.json`. The CLI handles identity/auth and
+heartbeat stage order; synchronized Skills direct the Agent's interpretation.
+Migration 000109 must precede API deployment and CLI release must precede Skills
+requiring these commands. The existing direct capture endpoints remain compatible.

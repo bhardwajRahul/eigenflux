@@ -76,7 +76,11 @@ func capabilitySeeds() []capabilitySeed {
 	seeds := []capabilitySeed{
 		capability("need.input.create", "eigenflux need input create", "need", "write", "保存已确认意图的结构化输入", "Save structured input for a confirmed intent"),
 		capability("need.input.get", "eigenflux need input get", "need", "read", "读取需求输入", "Read an owned NeedInput"),
+		capability("need.capture.pending", "eigenflux need capture pending", "need", "read", "读取待整理意图", "Read pending Intent capture work"),
+		capability("need.capture.complete", "eigenflux need capture complete", "need", "write", "完成意图需求整理", "Complete a confirmed Intent capture review"),
 		capability("need.input.list", "eigenflux need input list", "need", "read", "列出需求输入", "List owned NeedInputs"),
+		capability("discovery.search", "eigenflux search", "discovery", "read", "Search all source kinds", "Search all source kinds"),
+		capability("discovery.recommend", "eigenflux recommend", "discovery", "read", "Find an automatic discovery result", "Find an automatic discovery result"),
 		capability("capabilities.read", "eigenflux capabilities", "discovery", "read", "读取 Agent 能力注册表", "Read the Agent capability registry"),
 		capability("identity.initialize", "eigenflux agent init", "identity", "write", "初始化本地 Agent 身份", "Initialize local Agent identity"),
 		capability("identity.provision", "eigenflux agent provision", "identity", "write", "创建或认领 Agent", "Provision or claim an Agent"),
@@ -174,6 +178,12 @@ func capabilitySeeds() []capabilitySeed {
 			if seed.access == "write" {
 				seed.confirmation = "linked_confirmed_intent"
 			}
+		}
+		if strings.HasPrefix(seed.id, "need.capture.") {
+			seed.minCLI = "0.0.56"
+		}
+		if strings.HasPrefix(seed.id, "discovery.") {
+			seed.minCLI = "0.0.55"
 		}
 		if seed.id == "capabilities.read" || (strings.HasPrefix(seed.id, "context.") && seed.id != "context.read") ||
 			(strings.HasPrefix(seed.id, "attention.") && seed.id != "attention.publish" && seed.id != "attention.prefill") {
@@ -334,6 +344,16 @@ func buildAgentCapabilityRegistry(language string, controlEnabled, attentionEnab
 
 func (s *Service) getAgentCapabilities(_ context.Context, c *app.RequestContext) {
 	registry := buildAgentCapabilityRegistry(string(c.Query("lang")), s.enableControl, s.enableAttentionV1)
+	if !s.enableDiscovery {
+		ops := registry["operations"].([]capabilityOperation)
+		filtered := ops[:0]
+		for _, op := range ops {
+			if !strings.HasPrefix(op.OperationID, "discovery.") {
+				filtered = append(filtered, op)
+			}
+		}
+		registry["operations"] = filtered
+	}
 	payload, err := json.Marshal(map[string]interface{}{"data": registry})
 	if err != nil {
 		fail(c, http.StatusInternalServerError, "CAPABILITY_REGISTRY_FAILED", "could not build capability registry", nil)
